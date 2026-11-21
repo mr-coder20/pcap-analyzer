@@ -1,0 +1,3 @@
+scapy>=2.5.0      # fallback reader for unsupported link-layer types
+brotli>=1.1.0     # Brotli decoding in HTTP bodies
+pyzipper>=0.3.6   # AES-256 encrypted ZIP (password "infected") — strongly recommended

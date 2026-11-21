@@ -1,0 +1,89 @@
+name: Release
+
+# One command publishes everything:
+#     python tools/release.py 7.1.0        (or: git tag v7.1.0 && git push origin v7.1.0)
+# GitHub then builds Windows / macOS / Linux binaries and publishes them as the "Latest" release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v7.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest,   label: Windows x64 }
+          - { os: ubuntu-latest,    label: Linux x64 }
+          - { os: macos-latest,     label: macOS Apple-Silicon }
+          - { os: macos-15-intel,   label: macOS Intel }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-optional.txt pyinstaller
+      - name: Build
+        run: python tools/build.py
+      - name: Smoke test (Linux/macOS binary)
+        if: runner.os == 'Linux'
+        run: |
+          tar -xzf dist/release/*.tar.gz -C dist
+          ./dist/PCAP-Analyzer/PCAP-Analyzer --version
+          ./dist/PCAP-Analyzer/PCAP-Analyzer --doctor
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}
+          path: dist/release/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: PCAP Analyzer ${{ github.event.inputs.tag || github.ref_name }}
+          make_latest: true
+          generate_release_notes: true
+          files: release/*
+          body: |
+            ## ⬇️ Download
+            | OS | File |
+            |---|---|
+            | 🪟 Windows | `PCAP-Analyzer-windows-x64.exe` |
+            | 🍎 macOS (Apple Silicon) | `PCAP-Analyzer-macos-arm64.zip` |
+            | 🍎 macOS (Intel) | `PCAP-Analyzer-macos-x64.zip` |
+            | 🐧 Linux | `PCAP-Analyzer-linux-x64.tar.gz` |
+
+            Verify with `SHA256SUMS.txt`. macOS first run: right-click → Open (or `xattr -cr PCAP-Analyzer.app`).
+            Made by [mr-coder20](https://github.com/mr-coder20).

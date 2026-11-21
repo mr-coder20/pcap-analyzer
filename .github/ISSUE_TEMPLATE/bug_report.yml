@@ -1,0 +1,13 @@
+name: Bug report
+description: Something broke
+labels: [bug]
+body:
+  - type: input
+    attributes: { label: Version, placeholder: "7.0.0" }
+    validations: { required: true }
+  - type: dropdown
+    attributes: { label: OS, options: [Windows, macOS, Linux] }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: What happened?, description: "Do NOT attach real malware or private captures." }
+    validations: { required: true }
