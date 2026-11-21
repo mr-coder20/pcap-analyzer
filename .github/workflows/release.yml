@@ -27,6 +27,9 @@ jobs:
           - { os: macos-latest,     label: macOS Apple-Silicon }
           - { os: macos-15-intel,   label: macOS Intel }
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,9 +46,9 @@ jobs:
       - name: Smoke test (Linux/macOS binary)
         if: runner.os == 'Linux'
         run: |
-          tar -xzf dist/release/*.tar.gz -C dist
-          ./dist/PCAP-Analyzer/PCAP-Analyzer --version
-          ./dist/PCAP-Analyzer/PCAP-Analyzer --doctor
+          mkdir -p smoke && tar -xzf dist/release/*.tar.gz -C smoke
+          ./smoke/PCAP-Analyzer/PCAP-Analyzer --version
+          ./smoke/PCAP-Analyzer/PCAP-Analyzer --doctor
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}

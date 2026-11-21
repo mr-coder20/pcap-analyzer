@@ -27,7 +27,7 @@ SEP = ";" if os.name == "nt" else ":"
 
 
 def run(cmd):
-    print("→", " ".join(map(str, cmd)))
+    print("->", " ".join(map(str, cmd)))
     subprocess.check_call(cmd, cwd=ROOT)
 
 
@@ -79,7 +79,7 @@ def main():
             tf.add(binp, arcname=f"{NAME}/{NAME}")
             for d in docs:
                 tf.add(d, arcname=f"{NAME}/{d.name}")
-    print("\n✅ built:", dst, f"({dst.stat().st_size / 1e6:.1f} MB)")
+    print("\nbuilt:", dst, f"({dst.stat().st_size / 1e6:.1f} MB)")
 
 
 if __name__ == "__main__":
