@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 420" width="1280" height="420" role="img" aria-label="PCAP Analyzer v8 Cyber">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#05060d"/><stop offset="0.55" stop-color="#0a0d1c"/><stop offset="1" stop-color="#120a2e"/></linearGradient>
+    <linearGradient id="neon" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00e5ff"/><stop offset="0.55" stop-color="#7c5cff"/><stop offset="1" stop-color="#ff2bd6"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1d2a55" stroke-width="1" opacity="0.55"/></pattern>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <radialGradient id="orb" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#00e5ff" stop-opacity="0.35"/><stop offset="1" stop-color="#00e5ff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1280" height="420" fill="url(#bg)"/>
+  <rect width="1280" height="420" fill="url(#grid)"/>
+  <circle cx="1040" cy="210" r="230" fill="url(#orb)"/>
+  <g fill="none" stroke="url(#neon)" stroke-width="2" opacity="0.9" filter="url(#glow)">
+    <path d="M760 300 L820 300 L850 240 L900 330 L950 150 L1000 290 L1050 210 L1100 250 L1150 190 L1230 190"/>
+  </g>
+  <g fill="#00e5ff" filter="url(#glow)"><circle cx="950" cy="150" r="5"/><circle cx="1050" cy="210" r="4"/><circle cx="1150" cy="190" r="4"/></g>
+  <g font-family="'JetBrains Mono','Cascadia Code',Consolas,'SF Mono',monospace">
+    <text x="70" y="70" fill="#5b6b93" font-size="15" letter-spacing="3">$ pcap-analyzer capture.pcap --cli</text>
+    <text x="68" y="168" fill="url(#neon)" font-size="84" font-weight="800" letter-spacing="2" filter="url(#glow)">PCAP ANALYZER</text>
+    <text x="72" y="222" fill="#e8f4ff" font-size="28" font-weight="600">v8 · CYBER <tspan fill="#22ffa0">●</tspan> <tspan fill="#8fa3c8" font-weight="400">offline forensics &amp; threat hunting</tspan></text>
+    <g font-size="17" fill="#00e5ff">
+      <text x="72" y="290">▸ click any protocol / route → exact events</text>
+      <text x="72" y="320">▸ every transferred file → ZIP, original names, hashes</text>
+      <text x="72" y="350">▸ stealer · C2 · exploit-kit · exfil detection, ATT&amp;CK mapped</text>
+      <text x="72" y="380" fill="#ff2bd6">▸ English / فارسی · 8 themes · 100% offline</text>
+    </g>
+  </g>
+</svg>

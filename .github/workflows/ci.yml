@@ -11,11 +11,20 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.9", "3.11", "3.12"]
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "${{ matrix.python }}" }
-      - run: pip install -r requirements-dev.txt
-      - run: python -m py_compile app_meta.py pcap_*.py i18n_*.py
-      - run: pip install ruff && ruff check --select F821,F811,F823,E9 .
-      - run: pytest -q
+      - name: Install
+        run: python -m pip install -r requirements-dev.txt
+      - name: Compile
+        run: python -m compileall -q .
+      - name: Lint (undefined names / syntax)
+        run: |
+          python -m pip install ruff
+          python -m ruff check --select F821,F811,F823,E9 .
+      - name: Tests
+        run: python -m pytest -q

@@ -17,8 +17,10 @@ import pcap_fastio as FIO  # noqa: E402
 
 
 def run(args):
+    import os
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     return subprocess.run([sys.executable, str(ROOT / "pcap_analyzer.py"), *args],
-                          capture_output=True, text=True, encoding="utf-8", timeout=180)
+                          capture_output=True, text=True, encoding="utf-8", timeout=180, env=env)
 
 
 @pytest.fixture(scope="module")

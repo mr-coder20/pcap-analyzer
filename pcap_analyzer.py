@@ -79,6 +79,11 @@ def _early_lang():
     return None
 
 
+for _st in (sys.stdout, sys.stderr):          # Windows consoles / pipes default to cp125x: never crash on emoji or Persian
+    try:
+        _st.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 I18N.init(_early_lang())
 _builtin_print = print
 

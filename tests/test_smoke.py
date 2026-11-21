@@ -19,8 +19,9 @@ def pcap(tmp_path_factory):
 
 
 def run(args):
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     return subprocess.run([sys.executable, str(ROOT / "pcap_analyzer.py"), *args],
-                          capture_output=True, text=True, encoding="utf-8", timeout=120)
+                          capture_output=True, text=True, encoding="utf-8", timeout=120, env=env)
 
 
 def test_doctor():
