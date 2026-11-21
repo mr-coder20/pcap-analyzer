@@ -138,7 +138,7 @@ Then open `out/<name>_pcap_report.html` in any browser.
 | `--zip-password PW` | ZIP password (default `infected`; needs pyzipper) |
 | `--max-extract-mb N` · `--max-stream-mb N` · `--max-mem-mb N` | extraction / reassembly caps |
 | `--no-fast` | force the legacy scapy path |
-| `--sample-mode` · `--ioc-file` · `--no-defang` · `--unmask` · `--max-packets` · `--no-bundle` | as in v7 |
+| `--sample-mode` · `--ioc-file` · `--no-defang` · `--mask` · `--max-packets` · `--no-bundle` | as in v7 |
 
 ## 📁 Output
 

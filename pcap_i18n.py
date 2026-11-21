@@ -31,7 +31,7 @@ def _load():
     if _loaded:
         return
     _loaded = True
-    for mod in ("i18n_misc", "i18n_part_a", "i18n_part_b", "i18n_part_c", "i18n_gui"):
+    for mod in ("i18n_misc", "i18n_part_a", "i18n_part_b", "i18n_part_c", "i18n_gui", "i18n_ui2"):
         try:
             m = __import__(mod)
         except Exception:
@@ -205,6 +205,28 @@ def install_tk_hooks():
                 kw["text"] = tr(kw["text"])
             return on(self, child, **kw)
         ttk.Notebook.add = nb_add
+    except Exception:
+        pass
+    try:                                           # Text.insert / Canvas.create_text / Treeview.heading
+        t_ins = tk.Text.insert
+
+        def text_insert(self, index, chars, *args):
+            return t_ins(self, index, tr(chars) if isinstance(chars, str) else chars, *args)
+        tk.Text.insert = text_insert
+        c_ct = tk.Canvas.create_text
+
+        def create_text(self, *args, **kw):
+            if isinstance(kw.get("text"), str):
+                kw["text"] = tr(kw["text"])
+            return c_ct(self, *args, **kw)
+        tk.Canvas.create_text = create_text
+        tv_h = ttk.Treeview.heading
+
+        def heading(self, column, option=None, **kw):
+            if isinstance(kw.get("text"), str):
+                kw["text"] = tr(kw["text"])
+            return tv_h(self, column, option, **kw) if option is not None else tv_h(self, column, **kw)
+        ttk.Treeview.heading = heading
     except Exception:
         pass
     tk._pcap_i18n = True

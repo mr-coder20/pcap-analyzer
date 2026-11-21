@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - { os: windows-latest,   label: Windows x64 }
-          - { os: ubuntu-latest,    label: Linux x64 }
+          - { os: ubuntu-24.04,     label: Linux x64 }
           - { os: macos-latest,     label: macOS Apple-Silicon }
           - { os: macos-15-intel,   label: macOS Intel }
     runs-on: ${{ matrix.os }}

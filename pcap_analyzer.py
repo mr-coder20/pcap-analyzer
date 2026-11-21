@@ -947,7 +947,7 @@ class EngineConfig:
         self.dga_nx_thresh = 30
         self.exfil_mb_thresh = 5.0
         self.beacon_cv_thresh = 0.20
-        self.mask_passwords = True
+        self.mask_passwords = False      # passwords / tokens seen in cleartext traffic are shown by default
         self.use_tshark_if_available = True
         self.max_streams = 60000
         self.max_stream_bytes = 64 * 1024 * 1024        # سقف هر جهت جریان (برای فایل‌های بزرگ)
@@ -3101,8 +3101,18 @@ if HAS_TK:
         G.PAL["orange"], "#a3e635", "#2dd4bf", "#e879f9", "#818cf8", G.PAL["bad"],
     ]
 
+    class _LStr(tk.StringVar):
+        """StringVar that translates Persian source text into the active language on set()."""
+        def set(self, value):
+            self.raw = value
+            super().set(I18N.tr(value) if isinstance(value, str) else value)
+
+    def tr_(s):
+        return I18N.tr(s)
+
     class PcapAnalyzerApp(tk.Tk):
         def __init__(self, initial_file=None):
+            G.set_rtl(I18N.get_lang() == "fa")
             super().__init__()
             self.title(f"{META.APP_NAME} — v{META.VERSION}")
             self.geometry("1500x940")
@@ -3123,12 +3133,10 @@ if HAS_TK:
 
             self.current_file = tk.StringVar()
             self.auto_open = tk.BooleanVar(value=False)
-            tshark_ok = "فعال (نصب شده)" if find_tshark_binary() else "موتور داخلی Scapy + TCP Reassembler"
-            self.status_text = tk.StringVar(
-                value=f"آماده بارگذاری فایل (PCAP / PCAPNG / LOG / JSON) | وضعیت موتور: {tshark_ok}"
-            )
+            self.status_text = _LStr()
+            self.status_text.set(self._ready_text())
             self.search_var = tk.StringVar()
-            self.sev_filter_var = tk.StringVar(value="همه (All)")
+            self.sev_filter_var = tk.StringVar(value=I18N.tr("همه (All)"))
 
             self.last_stats = None
             self.last_findings = []
@@ -3164,6 +3172,8 @@ if HAS_TK:
                     f.write(time.strftime("[%Y-%m-%d %H:%M:%S]\n") + err + "\n")
             except Exception:
                 pass
+            if isinstance(val, tk.TclError) and any(k in str(val) for k in ("bad window path name", "invalid command name", "application has been destroyed")):
+                return                       # late redraw callback of a widget that a live rebuild just destroyed
             seen = self.__dict__.setdefault("_seen_ui_errors", set())
             key = (exc.__name__, str(val)[:120], tb.tb_lineno if tb else 0)
             if key in seen or len(seen) >= 3:
@@ -3196,66 +3206,58 @@ if HAS_TK:
             return G.make_text(parent, self.F, self.FM, mono=mono, size=size, bg=bg, fg=fg)
 
         # ---------------------------------------------------------------- layout
+        NAV_ITEMS = [
+            ("◈", "داشبورد"), ("⇄", "پروتکل‌ها و فایل‌ها"), ("⚠", "هشدارها"), ("⛓", "هرم درد و الماس"),
+            ("☷", "قوانین تشخیص"), ("⚗", "آزمایشگاه فایل‌ها"), ("⚙", "تنظیمات"),
+        ]
+
         def _build_ui(self):
             F, FM = self.F, self.FM
             P = G.PAL
+            self._set_window_title()
 
-            # ── top bar: brand · file · actions
-            top = G.GlassPanel(self, radius=28, pad=10, height=96)
+            # ── header: brand · file · theme · language · stop · start
+            top = G.GlassPanel(self, radius=28, pad=10, height=92)
             top.pack(fill="x", padx=14, pady=(12, 0))
             ti = top.inner
             self._logo = None
             if G.HAS_PIL:
                 try:
-                    self._logo = G.ImageTk.PhotoImage(G.make_app_icon(256).resize((52, 52), G.Image.LANCZOS))
+                    self._logo = G.ImageTk.PhotoImage(G.make_app_icon(256).resize((50, 50), G.Image.LANCZOS))
                 except Exception:
                     self._logo = None
             brand = tk.Frame(ti, bd=0)
-            brand.pack(side="left", padx=(6, 18))
+            brand.pack(side=G.S(), padx=G.PX(4, 18))
             if self._logo:
-                tk.Label(brand, image=self._logo, bd=0).pack(side="left", padx=(0, 12))
+                tk.Label(brand, image=self._logo, bd=0).pack(side=G.S(), padx=G.PX(0, 12))
             col = tk.Frame(brand, bd=0)
-            col.pack(side="left")
-            tk.Label(col, text=META.APP_NAME, fg=P["ink"], font=(F, 16, "bold"), anchor="w").pack(anchor="w")
-            tk.Label(col, text=f"v{META.VERSION}  ·  Dark Cyber Console", fg=P["dim"], font=(F, 9), anchor="w").pack(anchor="w")
+            col.pack(side=G.S())
+            tk.Label(col, text=META.APP_NAME, fg=P["ink"], font=(F, 16, "bold"), anchor=G.AS()).pack(anchor=G.AS())
+            vrow = tk.Frame(col, bd=0)
+            vrow.pack(anchor=G.AS())
+            tk.Label(vrow, text=f"v{META.VERSION}", fg=P["acc"], font=(F, 9, "bold")).pack(side=G.S())
+            tk.Label(vrow, text="  ·  Dark Cyber Console", fg=P["dim"], font=(F, 9)).pack(side=G.S())
 
-            act = tk.Frame(ti, bd=0)
-            act.pack(side="right")
-            self.btn_stop = G.GlassButton(act, "توقف", self.stop_analysis, "ghost", height=40, state="disabled",
+            self.btn_start = G.GlassButton(ti, "شروع تحلیل", self.start_analysis, "primary", height=42,
+                                           font=(F, 11, "bold"), width=156, icon="▶")
+            self.btn_start.pack(side=G.E())
+            self.btn_stop = G.GlassButton(ti, "توقف", self.stop_analysis, "ghost", height=42, state="disabled",
                                           font=(F, 10, "bold"), width=84)
-            self.btn_stop.pack(side="right", padx=(8, 0))
-            self.btn_start = G.GlassButton(act, "شروع تحلیل", self.start_analysis, "primary", height=40,
-                                           font=(F, 11, "bold"), width=150, icon="▶")
-            self.btn_start.pack(side="right")
+            self.btn_stop.pack(side=G.E(), padx=G.PX(0, 8))
+            lang_txt = "English" if I18N.get_lang() == "fa" else "فارسی"
+            self.btn_lang = G.GlassButton(ti, lang_txt, self._toggle_lang, "ghost", height=42, font=(F, 10, "bold"),
+                                          width=112, icon="🌐")
+            self.btn_lang.pack(side=G.E(), padx=G.PX(0, 8))
+            self.btn_theme = G.GlassButton(ti, "تم رنگی", self._theme_menu, "ghost", height=42, font=(F, 10, "bold"),
+                                           width=140, icon="◐")
+            self.btn_theme.pack(side=G.E(), padx=G.PX(0, 8))
+            self.btn_browse = G.GlassButton(ti, "انتخاب فایل", self.browse_file, "ghost", height=42,
+                                            font=(F, 10, "bold"), width=124, icon="⌕")
+            self.btn_browse.pack(side=G.E(), padx=G.PX(0, 12))
+            self.field_file = G.GlassField(ti, self.current_file, (FM, 10), height=42, fg=P["acc2"])
+            self.field_file.pack(side=G.S(), fill="x", expand=True)
 
-            fbox = tk.Frame(ti, bd=0)
-            fbox.pack(side="left", fill="x", expand=True, padx=(0, 14))
-            self.btn_browse = G.GlassButton(fbox, "انتخاب فایل", self.browse_file, "ghost", height=40,
-                                            font=(F, 10, "bold"), width=118, icon="⌕")
-            self.btn_browse.pack(side="right", padx=(10, 0))
-            self.field_file = G.GlassField(fbox, self.current_file, (FM, 10), height=40, fg=P["acc2"])
-            self.field_file.pack(side="right", fill="x", expand=True)
-
-            # ── nav + exports
-            navp = G.GlassPanel(self, radius=24, pad=8, height=70)
-            navp.pack(fill="x", padx=14, pady=(8, 0))
-            ni = navp.inner
-            exp = tk.Frame(ni, bd=0)
-            exp.pack(side="left", padx=(8, 0))
-            self.btn_html = G.GlassButton(exp, "گزارش HTML", self.export_and_open_html, "success", height=36,
-                                          font=(F, 9, "bold"), state="disabled", icon="↗")
-            self.btn_json = G.GlassButton(exp, "JSON", self.export_json, "ghost", height=36, font=(F, 9, "bold"), state="disabled")
-            self.btn_csv = G.GlassButton(exp, "CSV", self.export_csv, "ghost", height=36, font=(F, 9, "bold"), state="disabled")
-            self.btn_ioc = G.GlassButton(exp, "IOC و قوانین", self.export_ioc, "ghost", height=36, font=(F, 9, "bold"), state="disabled")
-            for b in (self.btn_html, self.btn_json, self.btn_csv, self.btn_ioc):
-                b.pack(side="left", padx=3)
-            names = ["داشبورد", "پروتکل‌ها و فایل‌ها", "هشدارها", "هرم درد و الماس", "قوانین تشخیص", "آزمایشگاه فایل‌ها", "تنظیمات"]
-            self._nav_n = len(names)
-            self.nav = G.SegmentedNav(ni, list(reversed(names)), lambda i: self._show_page(self._nav_n - 1 - i),
-                                      font=(F, 10, "bold"), height=46)
-            self.nav.pack(side="right", fill="x", expand=True, padx=(0, 14))
-
-            # ── status / progress / credits (packed before content so it keeps its space)
+            # ── footer (packed before the body so it keeps its space)
             foot = G.GlassPanel(self, radius=22, pad=6, height=82)
             foot.pack(side="bottom", fill="x", padx=14, pady=(0, 12))
             fi = foot.inner
@@ -3264,20 +3266,44 @@ if HAS_TK:
             line = tk.Frame(fi, bd=0)
             line.pack(fill="x")
             cred = tk.Frame(line, bd=0)
-            cred.pack(side="left")
+            cred.pack(side=G.S())
             small = (F, 9)
-            tk.Label(cred, text=f"{META.APP_NAME} v{META.VERSION} · by", fg=P["dim"], font=small).pack(side="left")
-            G.Link(cred, META.AUTHOR, lambda: webbrowser.open(META.GITHUB_PROFILE), (F, 9, "bold"), fg=P["acc"]).pack(side="left", padx=(5, 0))
+            tk.Label(cred, text=f"{META.APP_NAME} v{META.VERSION} · by", fg=P["dim"], font=small).pack(side=G.S())
+            G.Link(cred, META.AUTHOR, lambda: webbrowser.open(META.GITHUB_PROFILE), (F, 9, "bold"), fg=P["acc"]).pack(side=G.S(), padx=G.PX(5, 0))
             for txt, url in (("GitHub", META.REPO_URL), ("آخرین نسخه", META.LATEST_RELEASE_URL)):
-                tk.Label(cred, text="·", fg=P["dim"], font=small).pack(side="left", padx=6)
-                G.Link(cred, txt, lambda u=url: webbrowser.open(u), small).pack(side="left")
-            tk.Label(cred, text="·", fg=P["dim"], font=small).pack(side="left", padx=6)
-            G.Link(cred, "بررسی به‌روزرسانی", self.check_updates, small).pack(side="left")
-            tk.Label(line, textvariable=self.status_text, fg=P["acc2"], font=(F, 9, "bold"), anchor="e").pack(side="right")
+                tk.Label(cred, text="·", fg=P["dim"], font=small).pack(side=G.S(), padx=6)
+                G.Link(cred, txt, lambda u=url: webbrowser.open(u), small).pack(side=G.S())
+            tk.Label(cred, text="·", fg=P["dim"], font=small).pack(side=G.S(), padx=6)
+            G.Link(cred, "بررسی به‌روزرسانی", self.check_updates, small).pack(side=G.S())
+            tk.Label(line, textvariable=self.status_text, fg=P["acc2"], font=(F, 9, "bold"),
+                     anchor=G.AE()).pack(side=G.E())
+
+            # ── sidebar (start side): navigation + exports
+            side = G.GlassPanel(self, radius=26, pad=8, width=248)
+            side.pack(side=G.S(), fill="y", padx=G.PX(14, 0), pady=(8, 8))
+            side.pack_propagate(False)
+            si = side.inner
+            names = [(ic, tr_(nm)) for ic, nm in self.NAV_ITEMS]
+            self._nav_n = len(names)
+            self.nav = G.SideNav(si, names, self._show_page, (F, 10, "bold"), row_h=46)
+            self.nav.pack(fill="x", pady=(2, 8))
+            tk.Frame(si, bd=0, height=1, bg=P["line"]).pack(fill="x", pady=(2, 10), padx=6)
+            tk.Label(si, text="خروجی‌ها", fg=P["dim"], font=(F, 9, "bold"), anchor=G.AS()).pack(fill="x", padx=8, pady=(0, 6))
+            self.btn_html = G.GlassButton(si, "گزارش HTML", self.export_and_open_html, "success", height=38,
+                                          font=(F, 10, "bold"), state="disabled", icon="↗")
+            row = tk.Frame(si, bd=0)
+            self.btn_json = G.GlassButton(row, "JSON", self.export_json, "ghost", height=36, font=(F, 9, "bold"), state="disabled")
+            self.btn_csv = G.GlassButton(row, "CSV", self.export_csv, "ghost", height=36, font=(F, 9, "bold"), state="disabled")
+            self.btn_ioc = G.GlassButton(si, "IOC و قوانین", self.export_ioc, "ghost", height=36, font=(F, 9, "bold"), state="disabled")
+            self.btn_html.pack(fill="x", pady=3, padx=4)
+            row.pack(fill="x", padx=4)
+            self.btn_json.pack(side=G.S(), fill="x", expand=True, padx=G.PX(0, 3), pady=3)
+            self.btn_csv.pack(side=G.S(), fill="x", expand=True, padx=G.PX(0, 3), pady=3)
+            self.btn_ioc.pack(fill="x", pady=3, padx=4)
 
             # ── content
             self.content = G.GlassPanel(self, radius=30, pad=12, level=1)
-            self.content.pack(fill="both", expand=True, padx=14, pady=8)
+            self.content.pack(side=G.S(), fill="both", expand=True, padx=G.PX(12, 14), pady=(8, 8))
             ci = self.content.inner
             self.pages = []
             for _ in range(self._nav_n):
@@ -3294,8 +3320,102 @@ if HAS_TK:
             self._build_arsenal_tab()
             self._build_stats_tab()
             self._build_settings_tab()
-            self.nav.select(self._nav_n - 1, fire=False)
-            self._show_page(0)
+            self.nav.select(getattr(self, "_page", 0), fire=False)
+            self._show_page(getattr(self, "_page", 0))
+
+        def _set_window_title(self):
+            self.title(f"{META.APP_NAME} — v{META.VERSION}")
+
+        # ------------------------------------------------ live language / theme
+        def _toggle_lang(self):
+            self._set_lang("en" if I18N.get_lang() == "fa" else "fa")
+
+        def _set_lang(self, lg):
+            if lg not in I18N.LANGS or lg == I18N.get_lang():
+                return
+            I18N.set_lang(lg)
+            THEMES.save_config(lang=lg)
+            self.var_lang.set(lg) if hasattr(self, "var_lang") else None
+            self._rebuild_ui()
+
+        def _set_theme(self, tid):
+            if tid not in THEMES.THEMES:
+                return
+            self.cfg.theme = tid
+            THEMES.save_config(theme=tid, material=self.cfg.material, report_style=self.cfg.report_style)
+            self._rebuild_ui()
+
+        def _theme_menu(self):
+            P = G.PAL
+            m = tk.Menu(self, tearoff=0, bg=P["well"], fg=P["ink"], activebackground=P["acc"], activeforeground="#fff",
+                        bd=0, relief="flat", font=(self.F, 10))
+            fa = I18N.get_lang() == "fa"
+            for tid, t in THEMES.THEMES.items():
+                if not t.get("dark", True):
+                    continue                       # the light "paper" theme is for printed reports only
+                mark = "●  " if tid == self.cfg.theme else "○  "
+                m.add_command(label=mark + (t["fa"] if fa else t["name"]), command=lambda x=tid: self._set_theme(x))
+            b = self.btn_theme
+            m.tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height())
+
+        def _refresh_palette_globals(self):
+            """Re-derive module-level colours from the active theme (used by live theme switching)."""
+            G.apply_palette(THEMES.tk_palette(self.cfg.theme))
+            UI.update({"bg": G.PAL["bg"], "card": G.PAL["glass"], "card2": G.PAL["well2"], "line": G.PAL["line"],
+                       "fg": G.PAL["ink"], "mut": G.PAL["mut"], "acc": G.PAL["acc"], "acc2": G.PAL["acc2"],
+                       "ok": G.PAL["ok"], "warn": G.PAL["warn"], "bad": G.PAL["bad"], "code": G.PAL["well"],
+                       "panel": G.PAL["well"]})
+            CHART_PALETTE[:] = [G.PAL["acc"], G.PAL["acc2"], G.PAL["pink"], G.PAL["ok"], G.PAL["warn"], "#60a5fa",
+                                G.PAL["orange"], "#a3e635", "#2dd4bf", "#e879f9", "#818cf8", G.PAL["bad"]]
+
+        def _rebuild_ui(self):
+            """Tear the window down and rebuild it in the current language / direction / theme."""
+            try:
+                self._apply_settings()
+            except Exception:
+                pass
+            geo = self.geometry()
+            self.configure(cursor="watch")
+            self.update_idletasks()
+            G.set_rtl(I18N.get_lang() == "fa")
+            self._refresh_palette_globals()
+            for w in list(self.winfo_children()):
+                try:
+                    w.destroy()
+                except tk.TclError:
+                    pass
+            self.configure(bg=G.PAL["bg"])
+            self.backdrop = G.Backdrop(self)
+            self._pick_fonts()
+            self._setup_styles()
+            self.status_text.set(getattr(self.status_text, "raw", None) or self._ready_text())
+            self.sev_filter_var.set(I18N.tr("همه (All)"))
+            self._build_ui()
+            self.geometry(geo)
+            self.update_idletasks()
+            self._restore_state()
+            self.configure(cursor="")
+
+        def _restore_state(self):
+            """Re-fill the freshly built widgets from the last analysis (if any)."""
+            self.progress["value"] = 100 if self.last_stats else 0
+            if self.running:
+                self.btn_start.configure(state="disabled")
+                self.btn_stop.configure(state="normal")
+            if self.last_stats is not None:
+                try:
+                    self._render_results(self.last_stats, self.last_findings, self.last_corr, self.last_html_path)
+                except Exception:
+                    traceback.print_exc()
+                for b in (self.btn_json, self.btn_csv, self.btn_ioc):
+                    b.configure(state="normal")
+                self.btn_html.configure(state="normal" if self.last_html_path else "disabled")
+            else:
+                self._redraw_charts()
+
+        def _ready_text(self):
+            tshark_ok = "فعال (نصب شده)" if find_tshark_binary() else "موتور داخلی Scapy + TCP Reassembler"
+            return f"آماده بارگذاری فایل (PCAP / PCAPNG / LOG / JSON) | وضعیت موتور: {tshark_ok}"
 
         def _show_page(self, i):
             self.pages[i].tkraise()
@@ -3303,7 +3423,7 @@ if HAS_TK:
 
         def goto_page(self, i):
             if 0 <= i < self._nav_n:
-                self.nav.select(self._nav_n - 1 - i)
+                self.nav.select(i)
 
         # ------------------------------------------------------------- dashboard
         def _build_dashboard_tab(self):
@@ -3324,17 +3444,18 @@ if HAS_TK:
             ]
             for i, (key, title, default, color) in enumerate(stat_defs):
                 card = G.StatCard(cards_row, title, default, color, F)
-                card.grid(row=0, column=i, sticky="nsew")
-                cards_row.columnconfigure(i, weight=1, uniform="cards")
+                card.grid(row=0, column=G.col(i, 8), sticky="nsew", padx=1)
+                cards_row.columnconfigure(G.col(i, 8), weight=1, uniform="cards")
                 self.stat_labels[key] = card
 
             charts = tk.Frame(pg, bd=0)
             charts.pack(fill="x")
-            charts.columnconfigure(0, weight=0)
-            charts.columnconfigure(1, weight=1, uniform="ch")
-            charts.columnconfigure(2, weight=1, uniform="ch")
+            charts.columnconfigure(G.col(0, 3), weight=0)
+            charts.columnconfigure(G.col(1, 3), weight=1, uniform="ch")
+            charts.columnconfigure(G.col(2, 3), weight=1, uniform="ch")
 
-            def mk(parent, col, h=226, width=None):
+            def mk(parent, idx, h=226, width=None):
+                col = G.col(idx, 3)
                 c = G.GlassPanel(parent, radius=22, inset=6, pad=0, level=1, inner_widget=False, height=h,
                                  **({"width": width} if width else {}))
                 c.grid(row=0, column=col, sticky="nsew")
@@ -3359,11 +3480,11 @@ if HAS_TK:
             t.tag_configure("sub", foreground=P["mut"], font=(F, 11))
             t.insert("end", f"{META.APP_NAME}\n", "hero")
             t.insert("end", "یک فایل PCAP / PCAPNG / لاگ را انتخاب کنید و «شروع تحلیل» را بزنید. همه‌چیز کاملاً آفلاین است.\n\n", "sub")
-            t.insert("end",
-                     "•  بازسازی جریان‌های TCP و دیکد خودکار Gzip / Brotli / Chunked\n"
-                     "•  استخراج PE / ELF / SWF / ZIP / PDF / ماکرو (حتی XOR شده) و ذخیره امن در ZIP رمزدار\n"
-                     "•  JA3 / JA3S، DNS Tunneling و DGA، Beaconing، اسکن‌ها، SMB / Kerberos و حملات وب\n"
-                     "•  نگاشت به MITRE ATT&CK و D3FEND + قوانین Suricata / YARA / Splunk / Elastic\n\n")
+            for line in ("•  بازسازی جریان‌های TCP و دیکد خودکار Gzip / Brotli / Chunked\n",
+                         "•  استخراج PE / ELF / SWF / ZIP / PDF / ماکرو (حتی XOR شده) و ذخیره امن در ZIP رمزدار\n",
+                         "•  JA3 / JA3S، DNS Tunneling و DGA، Beaconing، اسکن‌ها، SMB / Kerberos و حملات وب\n",
+                         "•  نگاشت به MITRE ATT&CK و D3FEND + قوانین Suricata / YARA / Splunk / Elastic\n\n"):
+                t.insert("end", line)
             t.insert("end", "میانبرها:  Ctrl+O انتخاب فایل   ·   F5 شروع   ·   Esc توقف   ·   Ctrl+1…7 جابه‌جایی بین بخش‌ها\n", "mut")
             self._redraw_charts()
 
@@ -3371,8 +3492,8 @@ if HAS_TK:
         def _build_hub_tab(self):
             F, FM, P = self.F, self.FM, G.PAL
             pg = self.tab_hub
-            pg.columnconfigure(0, weight=2, uniform="h")
-            pg.columnconfigure(1, weight=5, uniform="h")
+            pg.columnconfigure(G.col(0, 2), weight=2, uniform="h")
+            pg.columnconfigure(G.col(1, 2), weight=5, uniform="h")
             pg.rowconfigure(0, weight=1)
 
             def mk_tree(parent, cols, headers, widths, row, rowspan=1, pady=(0, 0)):
@@ -3382,15 +3503,17 @@ if HAS_TK:
                 tv = ttk.Treeview(fr, columns=cols, show="headings", selectmode="browse")
                 for c, h, w in zip(cols, headers, widths):
                     tv.heading(c, text=h, command=lambda c=c, tv=tv: self._sort_tree(tv, c, False))
-                    tv.column(c, width=w, anchor="w")
+                    tv.column(c, width=w, anchor=G.AS())
+                if G.RTL:
+                    tv.configure(displaycolumns=list(cols)[::-1])
                 vsb = ttk.Scrollbar(fr, orient="vertical", command=tv.yview, style="Glass.Vertical.TScrollbar")
                 tv.configure(yscrollcommand=vsb.set)
-                vsb.pack(side="right", fill="y", padx=(0, 2), pady=4)
-                tv.pack(side="left", fill="both", expand=True, padx=2, pady=2)
+                vsb.pack(side=G.E(), fill="y", padx=2, pady=4)
+                tv.pack(side=G.S(), fill="both", expand=True, padx=2, pady=2)
                 return tv, fr
 
             left = tk.Frame(pg, bd=0)
-            left.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+            left.grid(row=0, column=G.col(0, 2), sticky="nsew", padx=G.PX(0, 6))
             left.rowconfigure(0, weight=1)
             left.columnconfigure(0, weight=1)
             self.tree_proto, _ = mk_tree(left, ("proto", "flows", "bytes", "events"),
@@ -3398,7 +3521,7 @@ if HAS_TK:
             self.tree_proto.bind("<<TreeviewSelect>>", self._on_proto_select)
 
             right = tk.Frame(pg, bd=0)
-            right.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+            right.grid(row=0, column=G.col(1, 2), sticky="nsew", padx=G.PX(6, 0))
             right.columnconfigure(0, weight=1)
             right.rowconfigure(0, weight=3)
             right.rowconfigure(2, weight=2)
@@ -3407,9 +3530,9 @@ if HAS_TK:
             bar = tk.Frame(right, bd=0)
             bar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
             self.lbl_files = tk.Label(bar, text="فایل‌ها: —", fg=P["acc2"], font=(F, 10, "bold"))
-            self.lbl_files.pack(side="left", padx=6)
-            G.GlassButton(bar, "باز کردن پوشه ZIP", self._open_zip_folder, "ghost", height=34, font=(F, 9, "bold")).pack(side="right", padx=3)
-            G.GlassButton(bar, "جزئیات فایل", self._show_file_detail, "ghost", height=34, font=(F, 9, "bold")).pack(side="right", padx=3)
+            self.lbl_files.pack(side=G.E(), padx=6)
+            G.GlassButton(bar, "باز کردن پوشه ZIP", self._open_zip_folder, "ghost", height=34, font=(F, 9, "bold")).pack(side=G.S(), padx=3)
+            G.GlassButton(bar, "جزئیات فایل", self._show_file_detail, "ghost", height=34, font=(F, 9, "bold")).pack(side=G.S(), padx=3)
             self.tree_files, _ = mk_tree(right, ("name", "size", "type", "proto", "src", "sha"),
                                          ("نام فایل", "حجم", "نوع واقعی", "پروتکل", "منبع", "SHA-256"), (240, 80, 150, 70, 170, 300), 2)
             self.tree_files.bind("<Double-1>", lambda e: self._show_file_detail())
@@ -3475,15 +3598,15 @@ if HAS_TK:
             bar = tk.Frame(pg, bd=0)
             bar.pack(fill="x", pady=(0, 8))
             self.lbl_count = tk.Label(bar, text="", fg=P["dim"], font=(F, 9))
-            self.lbl_count.pack(side="left", padx=6)
+            self.lbl_count.pack(side=G.E(), padx=6)
+            tk.Label(bar, text="شدت:", fg=P["mut"], font=(F, 10)).pack(side=G.S(), padx=G.PX(2, 8))
             cmb = ttk.Combobox(bar, textvariable=self.sev_filter_var, state="readonly", width=18, font=(F, 10),
-                               values=["همه (All)", "بحرانی (critical)", "بالا (high)", "متوسط (medium)",
-                                       "کم (low)", "اطلاعاتی (info)"])
-            cmb.pack(side="right", padx=(8, 0), ipady=3)
+                               values=[I18N.tr(v) for v in ("همه (All)", "بحرانی (critical)", "بالا (high)", "متوسط (medium)",
+                                                    "کم (low)", "اطلاعاتی (info)")])
+            cmb.pack(side=G.S(), padx=G.PX(0, 18), ipady=3)
             cmb.bind("<<ComboboxSelected>>", lambda *_: self.refresh_findings_table())
-            tk.Label(bar, text="شدت:", fg=P["mut"], font=(F, 10)).pack(side="right", padx=(14, 6))
-            G.GlassField(bar, self.search_var, (F, 10), width=300, height=38).pack(side="right")
-            tk.Label(bar, text="جستجو:", fg=P["mut"], font=(F, 10)).pack(side="right", padx=(0, 8))
+            tk.Label(bar, text="جستجو:", fg=P["mut"], font=(F, 10)).pack(side=G.S(), padx=G.PX(0, 8))
+            G.GlassField(bar, self.search_var, (F, 10), width=300, height=38).pack(side=G.S())
             self.search_var.trace_add("write", lambda *_: self.refresh_findings_table())
 
             body = tk.Frame(pg, bd=0)
@@ -3504,13 +3627,15 @@ if HAS_TK:
             }
             for col, (text, w) in headers.items():
                 self.tree_findings.heading(col, text=text, command=lambda c=col: self._sort_tree(self.tree_findings, c, False))
-                self.tree_findings.column(col, width=w, anchor="center" if col in ("sev", "mitre", "count") else "e")
+                self.tree_findings.column(col, width=w, anchor="center" if col in ("sev", "mitre", "count") else G.AS())
             for sev, color in SEV_COLOR.items():
                 self.tree_findings.tag_configure(sev, foreground=color)
+            if G.RTL:
+                self.tree_findings.configure(displaycolumns=list(cols)[::-1])
             vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree_findings.yview, style="Glass.Vertical.TScrollbar")
             self.tree_findings.configure(yscrollcommand=vsb.set)
-            vsb.pack(side="right", fill="y", padx=(0, 2), pady=4)
-            self.tree_findings.pack(side="left", fill="both", expand=True, padx=2, pady=2)
+            vsb.pack(side=G.E(), fill="y", padx=2, pady=4)
+            self.tree_findings.pack(side=G.S(), fill="both", expand=True, padx=2, pady=2)
             self.tree_findings.bind("<<TreeviewSelect>>", self.on_finding_select)
             self.tree_findings.bind("<Button-3>", self._finding_menu)
             self.tree_findings.bind("<Button-2>", self._finding_menu)
@@ -3539,8 +3664,8 @@ if HAS_TK:
         def _build_settings_tab(self):
             F, FM, P = self.F, self.FM, G.PAL
             pg = self.tab_settings
-            pg.columnconfigure(0, weight=3, uniform="s")
-            pg.columnconfigure(1, weight=2, uniform="s")
+            pg.columnconfigure(G.col(0, 2), weight=3, uniform="s")
+            pg.columnconfigure(G.col(1, 2), weight=2, uniform="s")
             pg.rowconfigure(0, weight=1)
 
             self.setting_vars = {
@@ -3564,9 +3689,9 @@ if HAS_TK:
             self.var_material = tk.StringVar(value=self.cfg.material)
             self.var_style = tk.StringVar(value=self.cfg.report_style)
             left = G.GlassPanel(pg, radius=24, inset=6, pad=16, level=2)
-            left.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+            left.grid(row=0, column=G.col(0, 2), sticky="nsew", padx=G.PX(0, 6))
             li = left.inner
-            tk.Label(li, text="آستانه‌های موتور تشخیص", fg=P["ink"], font=(F, 13, "bold"), anchor="e").pack(fill="x", pady=(0, 10))
+            tk.Label(li, text="آستانه‌های موتور تشخیص", fg=P["ink"], font=(F, 13, "bold"), anchor=G.AS()).pack(fill="x", pady=(0, 10))
             fields = [
                 ("حداکثر تعداد بسته (۰ = کل فایل)", "max_packets"),
                 ("اسکن پورت (تعداد پورت یکتا)", "port_scan_thresh"),
@@ -3584,22 +3709,22 @@ if HAS_TK:
                 is_float = key in ("exfil_mb_thresh", "beacon_cv_thresh")
                 inc = 0.05 if key == "beacon_cv_thresh" else (0.5 if is_float else 1)
                 G.GlassField(row, self.setting_vars[key], (FM, 10), width=170, height=36, spin=(0, 10000000, inc),
-                             fg=P["acc2"]).pack(side="left")
-                tk.Label(row, text=label_text, fg=P["mut"], font=(F, 10), anchor="e").pack(side="right")
+                             fg=P["acc2"]).pack(side=G.E())
+                tk.Label(row, text=label_text, fg=P["mut"], font=(F, 10), anchor=G.AS()).pack(side=G.S())
             btns = tk.Frame(li, bd=0)
             btns.pack(fill="x", pady=(14, 0))
             G.GlassButton(btns, "بازگشت به پیش‌فرض", self._reset_settings, "ghost", height=36, font=(F, 9, "bold"),
-                          icon="↺").pack(side="right")
+                          icon="↺").pack(side=G.S())
 
             right = tk.Frame(pg, bd=0)
-            right.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-            right.rowconfigure(0, weight=3)
-            right.rowconfigure(1, weight=2)
+            right.grid(row=0, column=G.col(1, 2), sticky="nsew", padx=G.PX(6, 0))
+            right.rowconfigure(0, weight=1)
+            right.rowconfigure(1, weight=0)
             right.columnconfigure(0, weight=1)
             sw = G.GlassPanel(right, radius=24, inset=6, pad=16, level=2)
             sw.grid(row=0, column=0, sticky="nsew", pady=(0, 6))
             si = sw.inner
-            tk.Label(si, text="رفتار برنامه", fg=P["ink"], font=(F, 13, "bold"), anchor="e").pack(fill="x", pady=(0, 8))
+            tk.Label(si, text="رفتار برنامه", fg=P["ink"], font=(F, 13, "bold"), anchor=G.AS()).pack(fill="x", pady=(0, 8))
             for text, var, color in (
                 ("ماسک کردن رمز عبور و توکن‌ها در گزارش‌ها", self.setting_vars["mask_passwords"], P["ok"]),
                 ("استفاده از TShark در صورت نصب بودن", self.setting_vars["use_tshark_if_available"], P["acc2"]),
@@ -3609,32 +3734,32 @@ if HAS_TK:
                 ("پکت‌خوان بومی سریع (بدون scapy)", self.setting_vars["fast_io"], P["acc"]),
             ):
                 G.GlassSwitch(si, text, var, (F, 10), color=color).pack(fill="x", pady=2)
-            tk.Label(si, text="ظاهر و خروجی", fg=P["ink"], font=(F, 12, "bold"), anchor="e").pack(fill="x", pady=(10, 4))
+            tk.Label(si, text="ظاهر و خروجی", fg=P["ink"], font=(F, 12, "bold"), anchor=G.AS()).pack(fill="x", pady=(10, 4))
             for label, var, vals, cb in (
-                ("Language / زبان (restart)", self.var_lang, list(I18N.LANGS), self._on_lang_change),
-                ("تم رنگی (نیازمند راه‌اندازی مجدد)", self.var_theme, list(THEMES.THEMES), self._on_theme_change),
+                ("Language / زبان", self.var_lang, list(I18N.LANGS), self._on_lang_change),
+                ("تم رنگی", self.var_theme, list(THEMES.THEMES), self._on_theme_change),
                 ("متریال گزارش HTML", self.var_material, list(THEMES.MATERIALS), self._on_output_change),
                 ("قالب گزارش (cyber / classic / both)", self.var_style, ["cyber", "classic", "both"], self._on_output_change),
             ):
                 row = tk.Frame(si, bd=0)
                 row.pack(fill="x", pady=2)
                 cmb = ttk.Combobox(row, textvariable=var, values=vals, state="readonly", width=18, font=(F, 10))
-                cmb.pack(side="left", ipady=2)
+                cmb.pack(side=G.E(), ipady=2)
                 cmb.bind("<<ComboboxSelected>>", cb)
-                tk.Label(row, text=label, fg=P["mut"], font=(F, 10), anchor="e").pack(side="right")
+                tk.Label(row, text=label, fg=P["mut"], font=(F, 10), anchor=G.AS()).pack(side=G.S())
 
-            ab = G.GlassPanel(right, radius=24, inset=6, pad=16, level=2)
+            ab = G.GlassPanel(right, radius=24, inset=6, pad=16, level=2, height=150)
             ab.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
             ai = ab.inner
-            tk.Label(ai, text="درباره", fg=P["ink"], font=(F, 13, "bold"), anchor="e").pack(fill="x")
-            tk.Label(ai, text=f"{META.APP_NAME}  v{META.VERSION}", fg=P["acc"], font=(F, 11, "bold"), anchor="e").pack(fill="x", pady=(6, 0))
-            tk.Label(ai, text=f"ساخته‌شده توسط {META.AUTHOR}  ·  مجوز {META.LICENSE_NAME}", fg=P["mut"], font=(F, 10), anchor="e").pack(fill="x")
+            tk.Label(ai, text="درباره", fg=P["ink"], font=(F, 13, "bold"), anchor=G.AS()).pack(fill="x")
+            tk.Label(ai, text=f"{META.APP_NAME}  v{META.VERSION}", fg=P["acc"], font=(F, 11, "bold"), anchor=G.AS()).pack(fill="x", pady=(6, 0))
+            tk.Label(ai, text=f"ساخته‌شده توسط {META.AUTHOR}  ·  مجوز {META.LICENSE_NAME}", fg=P["mut"], font=(F, 10), anchor=G.AS()).pack(fill="x")
             row = tk.Frame(ai, bd=0)
             row.pack(fill="x", pady=(12, 0))
-            G.GlassButton(row, "پروفایل", lambda: webbrowser.open(META.GITHUB_PROFILE), "ghost", height=34, font=(F, 9, "bold")).pack(side="right", padx=3)
-            G.GlassButton(row, "مخزن", lambda: webbrowser.open(META.REPO_URL), "ghost", height=34, font=(F, 9, "bold")).pack(side="right", padx=3)
-            G.GlassButton(row, "دانلودها", lambda: webbrowser.open(META.RELEASES_URL), "ghost", height=34, font=(F, 9, "bold")).pack(side="right", padx=3)
-            G.GlassButton(row, "نسخه جدید؟", self.check_updates, "primary", height=34, font=(F, 9, "bold")).pack(side="right", padx=3)
+            G.GlassButton(row, "پروفایل", lambda: webbrowser.open(META.GITHUB_PROFILE), "ghost", height=34, font=(F, 9, "bold")).pack(side=G.S(), padx=3)
+            G.GlassButton(row, "مخزن", lambda: webbrowser.open(META.REPO_URL), "ghost", height=34, font=(F, 9, "bold")).pack(side=G.S(), padx=3)
+            G.GlassButton(row, "دانلودها", lambda: webbrowser.open(META.RELEASES_URL), "ghost", height=34, font=(F, 9, "bold")).pack(side=G.S(), padx=3)
+            G.GlassButton(row, "نسخه جدید؟", self.check_updates, "primary", height=34, font=(F, 9, "bold")).pack(side=G.S(), padx=3)
 
         def _on_output_change(self, _e=None):
             self.cfg.material = self.var_material.get()
@@ -3642,17 +3767,10 @@ if HAS_TK:
             THEMES.save_config(material=self.cfg.material, report_style=self.cfg.report_style, theme=self.var_theme.get())
 
         def _on_theme_change(self, _e=None):
-            t = self.var_theme.get()
-            self.cfg.theme = t
-            THEMES.save_config(theme=t, material=self.var_material.get(), report_style=self.var_style.get())
-            if messagebox.askyesno("تم جدید", f"تم «{THEMES.get_theme(t)['fa']}» ذخیره شد.\nبرای اعمال روی رابط، برنامه همین حالا دوباره اجرا شود؟\n(گزارش HTML بعدی هم با این تم ساخته می‌شود)"):
-                self._restart()
+            self._set_theme(self.var_theme.get())
 
         def _on_lang_change(self, _e=None):
-            lg = self.var_lang.get()
-            THEMES.save_config(lang=lg)
-            if messagebox.askyesno("Language / زبان", "Language saved. Restart now to apply it?\nزبان ذخیره شد. برای اعمال، برنامه دوباره اجرا شود؟"):
-                self._restart()
+            self._set_lang(self.var_lang.get())
 
         def _restart(self):
             try:
@@ -3744,19 +3862,21 @@ if HAS_TK:
             col = SEV_COLOR.get(level, P["acc2"]) if score else P["dim"]
             cx, cy = w / 2, h / 2 + 12
             r = min(w, h) / 2 - 34
-            c.create_text(w - 22, 22, anchor="e", text="امتیاز ریسک کل", fill=P["mut"], font=(self.F, 10, "bold"), tags="fg")
+            c.create_text(G.xs(w, 22), 22, anchor=G.AS(), text="امتیاز ریسک کل", fill=P["mut"], font=(self.F, 10, "bold"), tags="fg")
             box = (cx - r, cy - r, cx + r, cy + r)
             c.create_arc(*box, start=225, extent=-270, style="arc", width=12, outline=G.mix(fill, "#ffffff", .10), tags="fg")
             if score > 0:
                 self._arc_glow(c, box, 225, -270 * score / 100, col, fill, 12)
-            c.create_text(cx, cy - 4, text=str(score), fill="#ffffff", font=(self.F, 34, "bold"), tags="fg")
-            c.create_text(cx, cy + 32, text=SEV_FA.get(level, level) if score else "منتظر تحلیل", fill=col, font=(self.F, 11, "bold"), tags="fg")
+            c.create_text(cx, cy - 12, text=str(score), fill=P["ink"], font=(self.F, 34, "bold"), tags="fg")
+            c.create_text(cx, cy + 24, text=SEV_FA.get(level, level) if score else "منتظر تحلیل", fill=col,
+                          font=(self.F, 10, "bold"), width=max(60, r * 1.5), justify="center", tags="fg")
 
         def _draw_bars(self):
             c = self.cv_proto
             w, h, fill = self._cv(c)
             P = G.PAL
-            c.create_text(w - 22, 22, anchor="e", text="توزیع پروتکل‌ها", fill=P["mut"], font=(self.F, 10, "bold"), tags="fg")
+            m = (lambda x: w - x) if G.RTL else (lambda x: x)      # mirror x for RTL
+            c.create_text(G.xs(w, 22), 22, anchor=G.AS(), text="توزیع پروتکل‌ها", fill=P["mut"], font=(self.F, 10, "bold"), tags="fg")
             items = self._chart_data["protocols"][:8]
             if not items or w < 160:
                 c.create_text(w / 2, h / 2 + 8, text="—", fill=P["dim"], font=(self.F, 18), tags="fg")
@@ -3770,12 +3890,12 @@ if HAS_TK:
                 x0, x1 = left + lab_w, right - val_w
                 bh = max(8, row_h - 11)
                 yy = y + (row_h - bh) / 2
-                c.create_text(left, y + row_h / 2, anchor="w", text=str(name)[:10], fill=P["ink"], font=(self.FM, 9), tags="fg")
-                self._pill(c, x0, yy, x1, yy + bh, G.mix(fill, "#ffffff", .07))
+                c.create_text(m(left), y + row_h / 2, anchor="e" if G.RTL else "w", text=str(name)[:10], fill=P["ink"], font=(self.FM, 9), tags="fg")
+                self._pill(c, min(m(x0), m(x1)), yy, max(m(x0), m(x1)), yy + bh, G.mix(fill, "#ffffff", .07))
                 bw = max(bh, (x1 - x0) * val / mx)
                 col = CHART_PALETTE[i % len(CHART_PALETTE)]
-                self._pill(c, x0, yy, x0 + bw, yy + bh, col)
-                c.create_text(right, y + row_h / 2, anchor="e", text=f"{val:,}", fill=P["mut"], font=(self.FM, 9), tags="fg")
+                self._pill(c, min(m(x0), m(x0 + bw)), yy, max(m(x0), m(x0 + bw)), yy + bh, col)
+                c.create_text(m(right), y + row_h / 2, anchor="w" if G.RTL else "e", text=f"{val:,}", fill=P["mut"], font=(self.FM, 9), tags="fg")
 
         def _pill(self, c, x1, y1, x2, y2, col):
             r = (y2 - y1) / 2
@@ -3788,7 +3908,8 @@ if HAS_TK:
             c = self.cv_time
             w, h, fill = self._cv(c)
             P = G.PAL
-            c.create_text(w - 22, 22, anchor="e", text="حجم ترافیک در طول زمان", fill=P["mut"], font=(self.F, 10, "bold"), tags="fg")
+            m = (lambda x: w - x) if G.RTL else (lambda x: x)
+            c.create_text(G.xs(w, 22), 22, anchor=G.AS(), text="حجم ترافیک در طول زمان", fill=P["mut"], font=(self.F, 10, "bold"), tags="fg")
             bins = self._chart_data["timeline"]
             if not bins or max(bins) == 0 or w < 160:
                 c.create_text(w / 2, h / 2 + 8, text="—", fill=P["dim"], font=(self.F, 18), tags="fg")
@@ -3801,18 +3922,18 @@ if HAS_TK:
             n = len(bins)
             pts = []
             for i, v in enumerate(bins):
-                pts.append((left + (right - left) * i / max(n - 1, 1), bottom - (bottom - top) * v / mx))
+                pts.append((m(left + (right - left) * i / max(n - 1, 1)), bottom - (bottom - top) * v / mx))
             flat = [p for xy in pts for p in xy]
             for k, t in enumerate((.88, .8, .7)):   # faux gradient fill
                 yk = [(x, y + (bottom - y) * (k / 3)) for x, y in pts]
-                c.create_polygon([left, bottom] + [p for xy in yk for p in xy] + [right, bottom],
+                c.create_polygon([m(left), bottom] + [p for xy in yk for p in xy] + [m(right), bottom],
                                  fill=G.mix(fill, P["acc2"], 1 - t + .02), outline="", tags="fg")
             c.create_line(flat, fill=G.mix(fill, P["acc2"], .25), width=7, smooth=True, tags="fg")
             c.create_line(flat, fill=P["acc2"], width=2.5, smooth=True, tags="fg")
             px, py = max(pts, key=lambda p: -p[1])
             c.create_oval(px - 6, py - 6, px + 6, py + 6, fill=G.mix(fill, P["acc2"], .4), outline="", tags="fg")
             c.create_oval(px - 3, py - 3, px + 3, py + 3, fill="#ffffff", outline="", tags="fg")
-            c.create_text(left, 22, anchor="w", text=f"اوج {mx:,}", fill=P["acc2"], font=(self.FM, 9), tags="fg")
+            c.create_text(G.xe(w, 26), 22, anchor=G.AE(), text=f"اوج {mx:,}", fill=P["acc2"], font=(self.FM, 9), tags="fg")
 
         def _draw_killchain(self):
             c = self.cv_killchain
@@ -3820,7 +3941,7 @@ if HAS_TK:
             if w < 240:
                 return
             P = G.PAL
-            c.create_text(w - 22, 20, anchor="e", text="زنجیره کشتار سایبری (Kill Chain)", fill=P["mut"], font=(self.F, 10, "bold"), tags="fg")
+            c.create_text(G.xs(w, 22), 20, anchor=G.AS(), text="زنجیره کشتار سایبری (Kill Chain)", fill=P["mut"], font=(self.F, 10, "bold"), tags="fg")
             kc_list = self._chart_data.get("kill_chain", [])
             if not kc_list:
                 return
@@ -3828,8 +3949,9 @@ if HAS_TK:
             pad_x, gap = 22, 8
             box_w = (w - 2 * pad_x - (n - 1) * gap) / n
             y1, y2 = 38, h - 16
+            fa = I18N.get_lang() == "fa"
             for idx, stage in enumerate(kc_list):
-                x1 = pad_x + (n - 1 - idx) * (box_w + gap)
+                x1 = pad_x + G.col(idx, n) * (box_w + gap)
                 x2 = x1 + box_w
                 active = stage.get("active", False)
                 cnt = stage.get("count", 0)
@@ -3840,8 +3962,8 @@ if HAS_TK:
                 else:
                     self._rr(c, x1, y1, x2, y2, 12, G.mix(fill, "#ffffff", .045), outline=G.mix(fill, "#ffffff", .12))
                 cx = (x1 + x2) / 2
-                c.create_text(cx, y1 + (y2 - y1) * .36, text=stage["stage_fa"], fill="#ffffff" if active else P["mut"],
-                              font=(self.F, 8, "bold"), width=box_w - 8, tags="fg")
+                c.create_text(cx, y1 + (y2 - y1) * .36, text=stage["stage_fa"] if fa else (stage.get("stage_en") or stage["stage_fa"]),
+                              fill=P["ink"] if active else P["mut"], font=(self.F, 8, "bold"), width=box_w - 8, tags="fg")
                 c.create_text(cx, y1 + (y2 - y1) * .74, text=f"{cnt:,} رخداد" if active else "—",
                               fill=P["orange"] if active else P["dim"], font=(self.F, 8, "bold"), tags="fg")
 
@@ -3980,7 +4102,11 @@ if HAS_TK:
                 f"✔ تحلیل کامل شد: {st['packets']:,} بسته | {len(findings)} هشدار امنیتی | ریسک: {corr['risk_score']}/100"
                 + (" | گزارش HTML آماده است" if html_path else "") + extra
             )
+            self._render_results(st, findings, corr, html_path)
+            if self.auto_open.get() and html_path:
+                self.export_and_open_html()
 
+        def _render_results(self, st, findings, corr, html_path):
             cnt = collections.Counter(f["severity"] for f in findings)
             score = corr["risk_score"]
             self.stat_labels["risk"].configure(text=f"{score}/100")
@@ -4024,9 +4150,10 @@ if HAS_TK:
             self._populate_frameworks_tab(corr)
             self._populate_arsenal_tab(corr["detection_arsenal"])
             self._populate_stats_tab(st)
-
-            if self.auto_open.get() and html_path:
-                self.export_and_open_html()
+            try:
+                self.nav.set_badge(2, len(findings))
+            except Exception:
+                pass
 
         def _sort_tree(self, tree, col, reverse):
             rows = [(tree.set(k, col), k) for k in tree.get_children("")]
@@ -4049,7 +4176,7 @@ if HAS_TK:
             sev_f = self.sev_filter_var.get()
             shown = 0
             for idx, f in enumerate(self.last_findings):
-                if sev_f != "همه (All)" and f["severity"] not in sev_f:
+                if not sev_f.lower().startswith(("همه", "all")) and f["severity"] not in sev_f.lower():
                     continue
                 hay = (f"{f['title']} {f['category']} {f['mitre']} {f['d3fend']} "
                        f"{' '.join(f['actors'])} {' '.join(f['targets'])} {' '.join(f['evidence'])}").lower()
@@ -4319,7 +4446,7 @@ def run_cli_mode(args):
 
     cfg = EngineConfig()
     cfg.max_packets = args.max_packets
-    cfg.mask_passwords = not args.unmask
+    cfg.mask_passwords = bool(args.mask)
     cfg.ioc_file = args.ioc_file
     cfg.sample_mode = args.sample_mode
     cfg.out_dir = prepare_output_dir(args.out or default_out_dir(target))
@@ -4447,7 +4574,8 @@ def main():
     parser.add_argument("--cli", action="store_true", help="اجرای خودکار در ترمینال بدون رابط گرافیکی")
     parser.add_argument("-o", "--out", help="پوشه اختصاصی خروجی (پیش‌فرض: ~/PCAP_Analyzer_Reports/...)")
     parser.add_argument("--max-packets", type=int, default=0, help="حداکثر تعداد بسته (0 = همه)")
-    parser.add_argument("--unmask", action="store_true", help="عدم ماسک رمزهای عبور در گزارش")
+    parser.add_argument("--mask", action="store_true", help="ماسک کردن رمزهای عبور در گزارش (پیش‌فرض: نمایش کامل)")
+    parser.add_argument("--unmask", action="store_true", help=argparse.SUPPRESS)   # kept for backward compatibility (now the default)
     parser.add_argument("--sample-mode", choices=["auto", "zip", "xor", "raw"], default="auto",
                         help="ذخیره نمونه‌های مخرب: auto/zip (رمزدار، امن) | xor (ظرف خنثی) | raw (خام، خطرناک)")
     parser.add_argument("--allow-defender-exclusion", action="store_true",
@@ -4479,8 +4607,8 @@ def main():
     args = parser.parse_args()
     if args.lang:
         I18N.set_lang(args.lang)
-    if I18N.get_lang() != "fa" and not args.cli:
-        I18N.install_tk_hooks()
+    if not args.cli:
+        I18N.install_tk_hooks()           # always on: lets the GUI switch language live
 
     if args.list_themes:
         for tid, t in THEMES.THEMES.items():

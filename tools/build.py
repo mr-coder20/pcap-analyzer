@@ -35,7 +35,7 @@ def pyinstaller(extra):
     sysname = platform.system()
     hidden = ["app_meta", "pcap_glass_ui", "pcap_safe_output", "pcap_plain_fa", "pcap_extra_detect",
               "pcap_fastio", "pcap_protocols", "pcap_extract", "pcap_report_cyber", "pcap_themes", "pcap_threats",
-              "pcap_rules_en", "pcap_i18n", "i18n_part_a", "i18n_gui", "i18n_misc",   # i18n_* are imported dynamically
+              "pcap_rules_en", "pcap_i18n", "i18n_part_a", "i18n_gui", "i18n_ui2", "i18n_misc",   # i18n_* are imported dynamically
               "PIL._tkinter_finder"]
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--name", NAME,
            "--collect-submodules", "scapy.layers", "--collect-submodules", "scapy.contrib",

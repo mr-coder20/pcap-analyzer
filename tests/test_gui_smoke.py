@@ -44,3 +44,48 @@ def test_gui_redraw_with_system_colour_names():
     finally:
         tk.Misc.cget = orig
     assert not errs, errs[0]
+
+
+def test_live_language_theme_switch_and_rtl(tmp_path, monkeypatch):
+    """Language / theme switch rebuilds the window live (no restart) and mirrors the layout for RTL."""
+    try:
+        root = tk.Tk()
+        root.destroy()
+    except tk.TclError:
+        pytest.skip("no display")
+    import pcap_analyzer as P
+    import pcap_glass_ui as G
+    import pcap_i18n as I
+    import pcap_themes as T
+    monkeypatch.setattr(T, "CONFIG_DIR", tmp_path)                 # never touch the user's real config
+    monkeypatch.setattr(T, "CONFIG_FILE", tmp_path / "config.json")
+    errs = []
+    P.PcapAnalyzerApp.report_callback_exception = lambda self, *a: errs.append(a)
+    I.set_lang("en")
+    I.install_tk_hooks()
+    app = P.PcapAnalyzerApp(None)
+    try:
+        app.geometry("1200x800")
+        for _ in range(15):
+            app.update()
+        assert G.RTL is False
+        x_ltr = app.nav.winfo_rootx()
+        app._set_lang("fa")
+        for _ in range(15):
+            app.update()
+        assert G.RTL is True and I.get_lang() == "fa"
+        assert app.nav.winfo_rootx() > x_ltr          # sidebar moved to the right side
+        app._set_theme("matrix")
+        for _ in range(15):
+            app.update()
+        app._set_lang("en")
+        for _ in range(15):
+            app.update()
+        assert G.RTL is False
+    finally:
+        try:
+            app.destroy()
+        except Exception:
+            pass
+        I.set_lang("en")
+    assert not errs, errs[0]

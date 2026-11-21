@@ -164,3 +164,15 @@ def test_aes_zip_password(tmp_path):
         zf.setpassword(b"infected")
         assert any(n.endswith("setup.exe") for n in zf.namelist())
         assert zf.read("MANIFEST.json")
+
+
+def test_passwords_shown_by_default_and_masked_with_flag(tmp_path):
+    """Cleartext credentials seen in traffic are displayed by default; --mask hides them."""
+    p = tmp_path / "n.pcap"
+    build(str(p))
+    for flag, expect_clear in (([], True), (["--mask"], False)):
+        out = tmp_path / ("o_mask" if flag else "o_clear")
+        r = run([str(p), "--cli", *flag, "-o", str(out)])
+        assert r.returncode == 0, r.stderr[-500:]
+        csv = (next(out.glob("*_protocol_events.csv"))).read_text(encoding="utf-8")
+        assert ("s3cret" in csv) is expect_clear

@@ -258,7 +258,7 @@ class ProtocolHubMixin:
             for line in p[:1500].split(b"\r\n")[:6]:
                 if line.startswith((b"NICK ", b"JOIN ", b"PRIVMSG ", b"USER ", b"PASS ", b"NOTICE ")) or b" PRIVMSG " in line[:80]:
                     t = line.decode("latin-1", "replace")[:160]
-                    if t.startswith("PASS "):
+                    if t.startswith("PASS ") and self.cfg.mask_passwords:
                         t = "PASS ***"
                     self.hub_event("IRC", "message", ts, n, src, sp, dst, dp, t, {}, 1)
         elif proto == "Telnet":
@@ -317,7 +317,7 @@ class ProtocolHubMixin:
             if is_client:
                 cmd, _, arg = line.partition(" ")
                 cmd = cmd.upper()
-                if cmd == "PASS":
+                if cmd == "PASS" and self.cfg.mask_passwords:
                     arg = "***"
                 flag = 1 if cmd in ("USER", "PASS", "RETR", "STOR", "DELE", "SITE", "RNFR", "MKD", "RMD") else 0
                 self.hub_event("FTP", "command", ts, n, src, sp, dst, dp, f"{cmd} {arg}".strip(), {"command": cmd, "arg": arg}, flag)
@@ -337,7 +337,7 @@ class ProtocolHubMixin:
         interesting = up.startswith(("EHLO", "HELO", "MAIL FROM", "RCPT TO", "AUTH", "STARTTLS", "USER ", "PASS ", "RETR", "LIST",
                                      "STAT", "QUIT", "LOGIN", "SELECT", "FETCH", "DATA")) or " LOGIN " in up or " FETCH " in up
         if client and interesting:
-            if up.startswith(("PASS ", "AUTH PLAIN", "AUTH LOGIN")) or " LOGIN " in up:
+            if self.cfg.mask_passwords and (up.startswith(("PASS ", "AUTH PLAIN", "AUTH LOGIN")) or " LOGIN " in up):
                 line = re.sub(r"(?i)(PASS |AUTH PLAIN |LOGIN \S+ )\S+", r"\1***", line)
             self.hub_event(proto, "command", ts, n, src, sp, dst, dp, line, {"command": line.split(" ", 1)[0]},
                            1 if up.startswith(("PASS", "AUTH", "USER", "LOGIN")) else 0)
@@ -874,12 +874,11 @@ class ProtocolHubMixin:
             rec_file["event"] = ev["i"]
         return ev
 
-    @staticmethod
-    def _mask_head(head: bytes) -> str:
+    def _mask_head(self, head: bytes) -> str:
         out = []
         for ln in head[:3000].decode("latin-1", "replace").split("\r\n"):
             k = ln.split(":", 1)[0].strip().lower()
-            if k in SENS_HDR and ":" in ln:
+            if self.cfg.mask_passwords and k in SENS_HDR and ":" in ln:
                 v = ln.split(":", 1)[1].strip()
                 ln = f"{ln.split(':', 1)[0]}: {v[:6]}…[{len(v)} chars]"
             out.append(ln)

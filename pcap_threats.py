@@ -400,7 +400,7 @@ class ThreatMixin:
             if not s["stor"] or _is_private(srv):
                 continue
             names = ", ".join(s["stor"][:4])
-            who = f"user={s['user']} pass={_mask(s['pw'])}" if s["user"] else "anonymous/unknown login"
+            who = f"user={s['user']} pass={_mask(s['pw']) if self.cfg.mask_passwords else s['pw']}" if s["user"] else "anonymous/unknown login"
             self.hit("stealer_ftp_exfil", s["n"], s["ts"], f"{cli} → ftp://{srv}  {who}  uploaded: {names}", cli, srv,
                      artifact=f"FTP:{srv}:{s['user'] or ''}")
             self.ioc_ips[srv].add("Exfiltration Server (FTP)")

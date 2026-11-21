@@ -31,6 +31,60 @@ PAL = {
 }
 
 
+# ----------------------------------------------------------------------------
+# Direction layer (LTR / RTL) — every layout decision goes through these helpers so the whole
+# window can be mirrored live when the language changes.
+# ----------------------------------------------------------------------------
+RTL = False
+
+
+def set_rtl(v):
+    global RTL
+    RTL = bool(v)
+
+
+def S():
+    """pack side at the reading START (left in LTR, right in RTL)."""
+    return "right" if RTL else "left"
+
+
+def E():
+    """pack side at the reading END."""
+    return "left" if RTL else "right"
+
+
+def AS():
+    """text anchor at the reading start."""
+    return "e" if RTL else "w"
+
+
+def AE():
+    return "w" if RTL else "e"
+
+
+def PX(start, end):
+    """padx tuple given (start_pad, end_pad)."""
+    return (end, start) if RTL else (start, end)
+
+
+def col(i, n):
+    """grid column for the i-th item in reading order out of n."""
+    return (n - 1 - i) if RTL else i
+
+
+def xs(w, off):
+    """x coordinate `off` px from the reading-start edge of a canvas of width w."""
+    return (w - off) if RTL else off
+
+
+def xe(w, off):
+    return off if RTL else (w - off)
+
+
+def JS():
+    return "right" if RTL else "left"
+
+
 def hex2rgb(h):
     """Colour → (r, g, b). Accepts '#rrggbb', '#rgb', and Tk colour names.
 
@@ -134,6 +188,19 @@ def make_backdrop(w, h):
     try:  # fine grain removes banding
         noise = Image.effect_noise((w, h), 14).convert("RGB")
         img = ImageChops.add(img, noise.point(lambda v: max(0, v - 118) // 3 if v > 118 else 0))
+    except Exception:
+        pass
+    try:  # faint cyber grid (same motif as the HTML report background)
+        grid = Image.new("RGB", (w, h), (0, 0, 0))
+        gd = ImageDraw.Draw(grid)
+        gc = mix(PAL["bg"], PAL["acc"], .10)
+        step = 44
+        for x in range(0, w, step):
+            gd.line([(x, 0), (x, h)], fill=hex2rgb(gc), width=1)
+        for y in range(0, h, step):
+            gd.line([(0, y), (w, y)], fill=hex2rgb(gc), width=1)
+        grid = ImageChops.subtract(grid, Image.new("RGB", (w, h), hex2rgb(PAL["bg"])))
+        img = ImageChops.add(img, grid)
     except Exception:
         pass
     return img
@@ -623,6 +690,93 @@ class SegmentedNav(tk.Canvas):
             self.create_text((x1 + x2) / 2, h / 2, text=label, fill=col, font=self.font)
 
 
+class SideNav(tk.Canvas):
+    """Vertical navigation (icon · label · optional badge) — mirrors the HTML report's sidebar and
+    flips automatically with the reading direction."""
+
+    def __init__(self, parent, items, on_select, font, row_h=46, **kw):
+        bg = kw.pop("bg", None) or _parent_bg(parent)
+        super().__init__(parent, bg=bg, highlightthickness=0, bd=0, cursor="hand2", **kw)
+        self._glass_transparent = True
+        self.items = items            # [(icon, label, tooltip_key)]
+        self.on_select, self.font, self.row_h = on_select, font, row_h
+        self.index = 0
+        self.badges = {}
+        self._hover = -1
+        self._pills = {}
+        self.configure(height=row_h * len(items) + 8)
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Button-1>", self._click)
+        self.bind("<Motion>", self._motion)
+        self.bind("<Leave>", lambda e: (setattr(self, "_hover", -1), self._draw()))
+
+    def _which(self, y):
+        i = int((y - 4) // self.row_h)
+        return i if 0 <= i < len(self.items) else -1
+
+    def _motion(self, e):
+        h = self._which(e.y)
+        if h != self._hover:
+            self._hover = h
+            self._draw()
+
+    def _click(self, e):
+        i = self._which(e.y)
+        if i >= 0:
+            self.select(i)
+
+    def select(self, i, fire=True):
+        self.index = i
+        self._draw()
+        if fire:
+            self.on_select(i)
+
+    def set_badge(self, i, n):
+        self.badges[i] = n
+        self._draw()
+
+    def _draw(self):
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 60:
+            return
+        self.delete("all")
+        bg = self.cget("bg")
+        for i, (icon, label, *_r) in enumerate(self.items):
+            y1, y2 = 4 + i * self.row_h, 4 + (i + 1) * self.row_h
+            active, hov = i == self.index, i == self._hover
+            if HAS_PIL and (active or hov):
+                key = (w, active, bg, PAL["acc"], PAL["acc2"])
+                ph = self._pills.get(key)
+                if ph is None:
+                    if active:
+                        img = render_pill(w - 4, self.row_h - 6, PAL["acc"], PAL["acc2"], bg, glow=True, alpha=.88)
+                    else:
+                        img = render_pill(w - 4, self.row_h - 6, "#ffffff", None, bg, glow=False, glass=True, alpha=.5)
+                    ph = ImageTk.PhotoImage(img)
+                    self._pills[key] = ph
+                self.create_image(2, y1 + 1, image=ph, anchor="nw")
+            elif active:
+                self.create_rectangle(2, y1 + 2, w - 2, y2 - 2, fill=PAL["acc"], outline="")
+            fg = "#ffffff" if active else (PAL["ink"] if hov else PAL["mut"])
+            if active and not _is_dark(PAL["acc"]):
+                fg = "#06101c"
+            cy = (y1 + y2) / 2
+            self.create_text(xs(w, 24), cy, text=icon, anchor="c", fill=fg, font=(self.font[0], self.font[1] + 2))
+            self.create_text(xs(w, 46), cy, text=label, anchor=AS(), fill=fg, font=self.font)
+            n = self.badges.get(i)
+            if n:
+                bx = xe(w, 24)
+                txt = str(n) if n < 100 else "99+"
+                rw = 10 + 4 * len(txt)
+                self.create_oval(bx - rw / 2, cy - 10, bx + rw / 2, cy + 10, fill=PAL["pink"] if not active else "#ffffff", outline="")
+                self.create_text(bx, cy, text=txt, fill="#ffffff" if not active else PAL["acc"], font=(self.font[0], 8, "bold"))
+
+
+def _is_dark(hexcol):
+    r, g, b = hex2rgb(hexcol)
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 140
+
+
 # ----------------------------------------------------------------------------
 # Progress, switch, field, stat card, link label
 # ----------------------------------------------------------------------------
@@ -713,15 +867,16 @@ class GlassSwitch(tk.Canvas):
             return
         self.delete("all")
         tw, th = 42, 22
-        x0, y0 = w - tw - 2, (h - th) / 2          # right side (RTL)
-        col = mix(PAL["well2"], PAL["acc"], self._pos)
+        x0, y0 = (w - tw - 2 if RTL else 2), (h - th) / 2          # switch sits at the reading start
+        col_ = mix(PAL["well2"], PAL["acc"], self._pos)
         r = th / 2
-        self.create_oval(x0, y0, x0 + th, y0 + th, fill=col, outline="")
-        self.create_oval(x0 + tw - th, y0, x0 + tw, y0 + th, fill=col, outline="")
-        self.create_rectangle(x0 + r, y0, x0 + tw - r, y0 + th, fill=col, outline="")
+        self.create_oval(x0, y0, x0 + th, y0 + th, fill=col_, outline="")
+        self.create_oval(x0 + tw - th, y0, x0 + tw, y0 + th, fill=col_, outline="")
+        self.create_rectangle(x0 + r, y0, x0 + tw - r, y0 + th, fill=col_, outline="")
         kx = x0 + 3 + (tw - th) * self._pos
         self.create_oval(kx, y0 + 3, kx + th - 6, y0 + th - 3, fill="#ffffff", outline="")
-        self.create_text(x0 - 12, h / 2, text=self.text, anchor="e", fill=self.color, font=self.font, justify="right")
+        tx = x0 - 12 if RTL else x0 + tw + 12
+        self.create_text(tx, h / 2, text=self.text, anchor=AS(), fill=self.color, font=self.font, justify=JS())
 
 
 class GlassField(tk.Canvas):
@@ -790,18 +945,22 @@ class StatCard(GlassPanel):
 
     def paint(self):
         super().paint()
-        self._text()
+        try:
+            self._text()
+        except tk.TclError:
+            pass
 
     def _text(self):
         w, h = self.winfo_width(), self.winfo_height()
         if w < 40:
             return
         self.delete("txt")
-        self.create_oval(w - 26, 24, w - 18, 32, fill=self.color, outline="", tags="txt")
-        self.create_oval(w - 29, 21, w - 15, 35, outline=mix(self.color, "#000000", .55), tags="txt")
-        self.create_text(w - 34 if False else w - 38, 28, text=self.title, anchor="e", fill=PAL["mut"],
+        dx = xs(w, 22)
+        self.create_oval(dx - 4, 24, dx + 4, 32, fill=self.color, outline="", tags="txt")
+        self.create_oval(dx - 7, 21, dx + 7, 35, outline=mix(self.color, "#000000", .55), tags="txt")
+        self.create_text(xs(w, 38), 28, text=self.title, anchor=AS(), fill=PAL["mut"],
                          font=(self.F, 9), tags="txt")
-        self.create_text(w - 22, h / 2 + 12, text=self.value, anchor="e", fill=self.color,
+        self.create_text(xs(w, 22), h / 2 + 12, text=self.value, anchor=AS(), fill=self.color,
                          font=(self.F, 19, "bold"), tags="txt")
 
 
@@ -859,8 +1018,19 @@ def make_text(parent, F, FM, mono=True, size=10, bg=None, fg=None):
     t._glass_keep = True
     vs = ttk.Scrollbar(wrap, orient="vertical", command=t.yview, style="Glass.Vertical.TScrollbar")
     t.configure(yscrollcommand=vs.set)
-    vs.pack(side="right", fill="y", padx=(0, 2), pady=4)
-    t.pack(side="left", fill="both", expand=True)
+    vs.pack(side=E(), fill="y", padx=2, pady=4)
+    t.pack(side=S(), fill="both", expand=True)
+    t.tag_configure("base", justify=JS())
+    _insert = t.insert
+
+    def insert(index, chars, *args):
+        if len(args) > 1:                      # alternating (chars, tags) form: leave untouched
+            return _insert(index, chars, *args)
+        tg = args[0] if args else ()
+        tg = (tg,) if isinstance(tg, str) else tuple(tg)
+        return _insert(index, chars, tg + ("base",))
+    t.insert = insert
+    t.tag_lower("base")
     t.wrap = wrap
     # make pack/grid/place of the Text apply to the wrapper
     for m in ("pack", "grid", "place"):
