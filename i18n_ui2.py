@@ -1,6 +1,14 @@
 # -*- coding: utf-8 -*-
 """English strings added by the v8.1 desktop redesign (live language switching, new layout)."""
 UI_EN = {
+    "گراف شبکه": "Network graph",
+    "ارتباطی برای نمایش نیست": "No connections to display",
+    "اندازه‌ی گره = حجم ترافیک · ضخامت یال = حجم بین دو میزبان · رنگ = بالاترین شدت هشدار مرتبط. روی گره یا یال کلیک کنید.": "Node size = traffic volume · edge width = bytes between two hosts · colour = highest related alert severity. Click a node or edge.",
+    "عادی": "Normal",
+    "کم": "Low",
+    "متوسط": "Medium",
+    "زیاد": "High",
+    "بحرانی": "Critical",
     "تم": "Theme",
     "خروجی‌ها": "Export",
     "•  بازسازی جریان‌های TCP و دیکد خودکار Gzip / Brotli / Chunked\n": "•  Rebuilds TCP streams and auto-decodes Gzip / Brotli / Chunked\n",

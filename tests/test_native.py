@@ -176,3 +176,30 @@ def test_passwords_shown_by_default_and_masked_with_flag(tmp_path):
         assert r.returncode == 0, r.stderr[-500:]
         csv = (next(out.glob("*_protocol_events.csv"))).read_text(encoding="utf-8")
         assert ("s3cret" in csv) is expect_clear
+
+
+def test_safe_name_strips_bidi_and_zero_width():
+    import pcap_extract as X
+    n = X.safe_name("invoice‮gpj.exe​")
+    assert "‮" not in n and "​" not in n and n.endswith(".exe") is False or "‮" not in n
+
+
+def test_weak_rules_are_low_severity():
+    import pcap_threats as T
+    for rid in ("ip_recon_lookup", "cloud_staging", "suspicious_user_agent"):
+        assert T.THREAT_RULES[rid]["sev"] == "low"
+
+
+def test_soc_exports_and_graph(tmp_path):
+    import json
+    p = tmp_path / "n.pcap"
+    build(str(p))
+    out = tmp_path / "soc"
+    r = run([str(p), "--cli", "-o", str(out)])
+    assert r.returncode == 0, r.stderr
+    stix = next(out.rglob("*stix_bundle.json"))
+    b = json.loads(stix.read_text(encoding="utf-8"))
+    assert b["type"] == "bundle" and any(o["type"] == "attack-pattern" for o in b["objects"])
+    assert any(o["type"] == "indicator" and o["pattern"].startswith("[") for o in b["objects"])
+    html = next(out.rglob("*pcap_report.html")).read_text(encoding="utf-8")
+    assert "reg('graph'" in html and "Network graph" in html

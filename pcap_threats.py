@@ -81,7 +81,7 @@ THREAT_RULES = {
          "The outbound file holds dozens of e-mail addresses; malware harvested the victim's contacts for secondary spam / phishing.",
          "Warn the contacts about phishing and review the mail accounts.")),
     "ip_recon_lookup": _r(
-        "medium", "T1016", "Reconnaissance", "Domain Names", "D3-OTF", "CAR-2014-11-002",
+        "low", "T1016", "Reconnaissance", "Domain Names", "D3-OTF", "CAR-2014-11-002",
         ("شناسایی", "جست‌وجوی IP عمومی / موقعیت جغرافیایی (رفتار بدافزار و بررسی Sandbox)",
          "میزبان از سرویس‌های «IP من چیست / ژئولوکیشن» پرسید؛ بدافزار برای شناسایی قربانی یا تشخیص محیط تحلیل/هاستینگ (مثلاً ip-api.com?fields=hosting) این کار را می‌کند.",
          "اگر برنامه‌ی ناشناخته این درخواست را زد، پروسه‌ی مبدأ را بیابید؛ با سایر هشدارهای همین میزبان تطبیق دهید."),
@@ -89,7 +89,7 @@ THREAT_RULES = {
          "The host queried an \"what is my IP\" / geolocation service — used by malware to profile the victim or detect analysis / hosting environments (e.g. ip-api.com?fields=hosting).",
          "Find the originating process if the program is unknown, and correlate with other alerts on the same host.")),
     "cloud_staging": _r(
-        "high", "T1105", "Delivery", "Domain Names", "D3-OTF", "CAR-2014-11-002",
+        "low", "T1105", "Delivery", "Domain Names", "D3-OTF", "CAR-2014-11-002",
         ("تحویل", "دانلود احتمالی بدافزار از میزبانی ابری عمومی (Google Drive / Discord / GitHub / Dropbox / Mega ...)",
          "ارتباط با سرویس‌های اشتراک فایل که لودرهایی مثل GuLoader، Remcos و Formbook پی‌لود رمزشده را از آن‌ها می‌گیرند. اگر کاربر آگاهانه دانلود نکرده باشد، مشکوک است.",
          "منبع اتصال (مرورگر یا پروسه‌ی ناشناس) را بررسی کنید؛ پی‌لودهای دانلودشده در Temp/AppData را بیابید."),
@@ -129,7 +129,7 @@ THREAT_RULES = {
          "Data was pushed to a webhook, bot API or paste/file-drop service — a favourite channel of stealers and RATs.",
          "Find the originating process and record/block the webhook URL or token as an IOC.")),
     "suspicious_user_agent": _r(
-        "medium", "T1071.001", "Command & Control", "Tools", "D3-NTA", "CAR-2014-11-002",
+        "low", "T1071.001", "Command & Control", "Tools", "D3-NTA", "CAR-2014-11-002",
         ("فرماندهی و کنترل", "User-Agent مشکوک / غیرمرورگر (اسکریپت، لودر، ابزار خط‌فرمان، IE7 جعلی)",
          "User-Agent خالی یا متعلق به ابزار برنامه‌نویسی/دانلودر یا IE قدیمی جعلی که بدافزارهایی مثل LokiBot و Formbook استفاده می‌کنند.",
          "پروسه‌ی مبدأ را بررسی کنید؛ این هشدار به‌تنهایی قطعی نیست و با سایر شواهد معنا می‌دهد."),

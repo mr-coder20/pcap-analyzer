@@ -91,3 +91,4 @@ def test_glass_renderer_headless():
     img, mean = G.render_glass(bd, 20, 20, 200, 120)
     assert img.size == (200, 120) and mean.startswith("#")
     assert G.make_app_icon(128).size == (128, 128)
+

@@ -964,7 +964,7 @@ class EngineConfig:
         self.theme = "neon-night"    # تم پیش‌فرض گزارش و رابط
         self.material = "glass"      # glass | solid | hologram | terminal
         self.report_style = "cyber"  # cyber | classic | both
-        self.formats = ("html", "json", "csv", "rules", "iocs")   # خروجی‌های انتخابی
+        self.formats = ("html", "json", "csv", "rules", "iocs", "stix", "sigma")   # خروجی‌های انتخابی
 
 
 # ============================================================================
@@ -2381,13 +2381,20 @@ class PcapAnalyzer(ExtraDetectMixin, ProtocolHubMixin, ThreatMixin):
             "smb_psexec", "crypto_miner", "ioc_feed_match"
         }
 
+        weak_ids = {"ip_recon_lookup", "cloud_staging", "suspicious_user_agent", "dyndns_domain", "tor_traffic"}
+        weak_score = 0.0
         for finding in f_list:
             sev = finding["severity"]
             count = max(1, int(finding.get("count", 1)))
-            base_score += weights.get(sev, 0) * (1.0 + min(0.75, math.log2(count) * 0.14))
+            part = weights.get(sev, 0) * (1.0 + min(0.75, math.log2(count) * 0.14))
+            if finding["id"] in weak_ids:
+                weak_score += part   # weak signals alone must not saturate the score
+                continue
+            base_score += part
             if finding["id"] in high_conf_ids:
                 has_high_conf = True
 
+        base_score += min(weak_score, 20.0)
         unique_kc = len({f["kill_chain"] for f in f_list if f["severity"] in ("critical", "high", "medium")})
         unique_categories = len({f["category"] for f in f_list if f["severity"] in ("critical", "high", "medium")})
         independent_iocs = sum(bool(x) for x in (
@@ -3029,7 +3036,7 @@ def _strip_heavy(st):
 
 
 def write_all_reports(target, out_dir, st, findings, corr, do_defang=True, style="cyber", theme="neon-night",
-                      material="glass", formats=("html", "json", "csv", "rules", "iocs")):
+                      material="glass", formats=("html", "json", "csv", "rules", "iocs", "stix", "sigma")):
     """HTML (cyber/classic/both) + JSON + CSV + Suricata + YARA + IOC را می‌نویسد؛ فهرست فایل‌ها را برمی‌گرداند."""
     out_dir = prepare_output_dir(out_dir)
     base = os.path.splitext(os.path.basename(target))[0]
@@ -3065,6 +3072,14 @@ def write_all_reports(target, out_dir, st, findings, corr, do_defang=True, style
             lines.extend(defang(str(v)) if do_defang else str(v) for v in vals)
             lines.append("")
         w("iocs_defanged.txt" if do_defang else "iocs.txt", "\n".join(lines))
+    if "stix" in formats:
+        import pcap_export as _EXP
+        w("stix_bundle.json", json.dumps(_EXP.build_stix(findings, corr), ensure_ascii=False, indent=2))
+    if "sigma" in formats:
+        import pcap_export as _EXP
+        _sg = _EXP.sigma_rules(corr)
+        if _sg:
+            w("sigma_rules.yml", _sg)
     if "csv" in formats:
         import io
         buf = io.StringIO()
@@ -4590,7 +4605,7 @@ def main():
     parser.add_argument("--theme", help="تم گزارش/رابط (neon-night, matrix, synthwave, crimson-ops, amber-terminal, ice-circuit, toxic-lime, paper-light)")
     parser.add_argument("--material", choices=list(THEMES.MATERIALS), help="جنس پنل‌ها: glass | solid | hologram | terminal")
     parser.add_argument("--report-style", choices=["cyber", "classic", "both"], default="cyber", help="قالب گزارش HTML")
-    parser.add_argument("--formats", default="html,json,csv,rules,iocs", help="خروجی‌های دلخواه، جداشده با کاما: html,json,csv,rules,iocs")
+    parser.add_argument("--formats", default="html,json,csv,rules,iocs,stix,sigma", help="خروجی‌های دلخواه، جداشده با کاما: html,json,csv,rules,iocs,stix,sigma")
     parser.add_argument("--list-themes", action="store_true", help="نمایش فهرست تم‌ها و خروج")
     parser.add_argument("--no-extract", action="store_true", help="فایل‌های منتقل‌شده استخراج و ZIP نشوند")
     parser.add_argument("--extract-scope", choices=["all", "downloads"], default="all", help="all: همه‌چیز · downloads: بدون HTML/JS/CSS/JSON وب")

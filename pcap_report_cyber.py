@@ -211,7 +211,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('#ov').classList.
 function kv(obj){const dl_=el('dl',{class:'kvg'});for(const k in obj){if(obj[k]==null||obj[k]==='')continue;dl_.append(el('dt',{},k),el('dd',{class:'ltr'},obj[k]))}return dl_}
 const route=(e)=>el('a',{href:'#',class:'ltr',onclick:ev=>{ev.preventDefault();ev.stopPropagation();showPair(e.a,e.b)}},e.a+(e.ap?':'+e.ap:'')+' → '+e.b+(e.bp?':'+e.bp:''));
 // ---------- views registry
-const VIEWS=[['overview','🛰️','نمای کلی'],['protocols','🧩','پروتکل‌ها'],['routes','🛣️','مسیرها'],['files','🗜️','فایل‌ها (ZIP)'],['findings','🚨','هشدارها'],['intel','🧠','شناخت تهدید'],['stats','📈','آمار']];
+const VIEWS=[['overview','🛰️','نمای کلی'],['protocols','🧩','پروتکل‌ها'],['routes','🛣️','مسیرها'],['graph','🕸️','گراف شبکه'],['files','🗜️','فایل‌ها (ZIP)'],['findings','🚨','هشدارها'],['intel','🧠','شناخت تهدید'],['stats','📈','آمار']];
 const nav=$('#nav'),main=$('#main'),views={};
 function go(v,arg){S.view=v;for(const k in views){views[k].el.classList.toggle('on',k===v)}nav.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
  const vv=views[v];if(!vv.built){vv.built=true;vv.el.append(...vv.build())}if(vv.focus&&arg!==undefined)vv.focus(arg);history.replaceState(null,'','#'+v+(arg?'/'+encodeURIComponent(arg):''));window.scrollTo(0,0)}
@@ -279,6 +279,32 @@ function showPair(a,b){const k=key2(a,b),pr=D.pairs.find(p=>key2(p.a,p.b)===k),f
  const body=el('div'),bar=el('div',{class:'tabs'});tabs.forEach(([id,l,fn],i)=>bar.append(el('button',{'data-t':id,class:i?'':'on',onclick:()=>{bar.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.t===id));body.replaceChildren(fn())}},l)));body.append(tabs[0][2]());
  modal('🛣️ '+a+'  ↔  '+b,el('div',{class:'row'},pr?[el('span',{class:'chip acc'},num(pr.flows)+' جریان'),el('span',{class:'chip'},hb(pr.bytes)),el('span',{class:'chip'},tsf(pr.t0)+' → '+tsf(pr.t1))]:null,...(pr?Object.keys(pr.protos).map(p=>el('span',{class:'tag acc',style:'cursor:pointer',onclick:()=>{$('#ov').classList.remove('on');go('protocols',p)}},pm(p)[0]+' '+p)):[])),bar,body)}
 reg('routes',0,()=>[el('h2',{},'مسیرهای ارتباطی (میزبان ↔ میزبان)'),el('p',{class:'muted'},'روی هر ردیف کلیک کنید تا بفهمید بین این دو دستگاه دقیقاً چه اتفاقی افتاده (پروتکل‌ها، جریان‌ها، رویدادها و فایل‌ها).'),el('div',{class:'panel'},dtable({rows:D.pairs.map(p=>Object.assign({ev:(evByPair[key2(p.a,p.b)]||[]).length,fi:(filesByPair[key2(p.a,p.b)]||[]).length,x:(evByPair[key2(p.a,p.b)]||[]).some(e=>e.x>1)?2:(evByPair[key2(p.a,p.b)]||[]).some(e=>e.x)?1:0},p)),sort:3,click:p=>showPair(p.a,p.b),cols:[{h:'میزبان A',v:p=>p.a,cls:'ltr'},{h:'میزبان B',v:p=>p.b,cls:'ltr'},{h:'جریان',v:p=>p.flows},{h:'حجم',v:p=>p.bytes,r:p=>hb(p.bytes)},{h:'پروتکل‌ها',v:p=>Object.keys(p.protos).join(),r:p=>Object.keys(p.protos).map(x=>el('span',{class:'tag acc'},x))},{h:'رویداد',v:p=>p.ev},{h:'فایل',v:p=>p.fi},{h:'بازه',v:p=>p.t0,r:p=>dur(p.t1-p.t0)}]}))]);
+
+// ============ GRAPH (self-contained force layout, no libraries)
+reg('graph',0,()=>{
+ const bad=new Map();D.findings.forEach(f=>{const w={critical:4,high:3,medium:2,low:1}[f.severity]||0;[...(f.actors||[]),...(f.targets||[])].forEach(ip=>bad.set(ip,Math.max(bad.get(ip)||0,w)))});
+ const P=D.pairs.slice(0,120),nodes=new Map();
+ P.forEach(p=>{[p.a,p.b].forEach(x=>{if(!nodes.has(x))nodes.set(x,{id:x,b:0,deg:0,x:0,y:0,vx:0,vy:0})});nodes.get(p.a).b+=p.bytes;nodes.get(p.b).b+=p.bytes;nodes.get(p.a).deg++;nodes.get(p.b).deg++});
+ const N=[...nodes.values()].sort((a,b)=>b.b-a.b).slice(0,70),ix=new Map(N.map((n,i)=>[n.id,i]));
+ const E=P.filter(p=>ix.has(p.a)&&ix.has(p.b));
+ if(!N.length)return [el('h2',{},'گراف شبکه'),el('div',{class:'empty'},'ارتباطی برای نمایش نیست')];
+ const W=1000,H=620;N.forEach((n,i)=>{const a=i*2.399,r=40+Math.sqrt(i)*55;n.x=W/2+Math.cos(a)*r;n.y=H/2+Math.sin(a)*r});
+ for(let it=0;it<260;it++){const t=1-it/260;
+  for(let i=0;i<N.length;i++)for(let j=i+1;j<N.length;j++){const a=N[i],b=N[j];let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy+.01;const f=2600/d2*t;const d=Math.sqrt(d2);dx/=d;dy/=d;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f}
+  E.forEach(e=>{const a=N[ix.get(e.a)],b=N[ix.get(e.b)];const dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)+.01,f=(d-90)*.012*t;a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f});
+  N.forEach(n=>{n.vx+=(W/2-n.x)*.004;n.vy+=(H/2-n.y)*.004;n.x=Math.min(W-30,Math.max(30,n.x+n.vx));n.y=Math.min(H-30,Math.max(30,n.y+n.vy));n.vx*=.6;n.vy*=.6})}
+ const col=['#64748b','#38bdf8','#fbbf24','#fb923c','#f43f5e'],mx=Math.max(...E.map(e=>e.bytes),1);
+ const x0=Math.min(...N.map(n=>n.x))-50,x1=Math.max(...N.map(n=>n.x))+50,y0=Math.min(...N.map(n=>n.y))-40,y1=Math.max(...N.map(n=>n.y))+30,vw=Math.max(x1-x0,760),vh=Math.max(y1-y0,440);
+ let svg='<svg viewBox="'+x0.toFixed(0)+' '+y0.toFixed(0)+' '+vw.toFixed(0)+' '+vh.toFixed(0)+'" width="100%" style="max-height:70vh;background:var(--bg2,transparent);border-radius:12px">';
+ E.forEach(e=>{const a=N[ix.get(e.a)],b=N[ix.get(e.b)],hot=Math.max(bad.get(e.a)||0,bad.get(e.b)||0);svg+='<line data-a="'+e.a+'" data-b="'+e.b+'" x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+col[hot]+'" stroke-opacity="'+(hot?.7:.35)+'" stroke-width="'+(1+4*Math.sqrt(e.bytes/mx)).toFixed(1)+'" style="cursor:pointer"><title>'+e.a+' ↔ '+e.b+' · '+hb(e.bytes)+'</title></line>'});
+ const nm=Math.max(...N.map(n=>n.b),1);
+ N.forEach(n=>{const r=5+11*Math.sqrt(n.b/nm),k=bad.get(n.id)||0;svg+='<g class="gn" data-id="'+n.id+'" style="cursor:pointer"><circle cx="'+n.x.toFixed(1)+'" cy="'+n.y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+col[k]+'" fill-opacity=".85" stroke="#fff" stroke-opacity=".5"/><text x="'+n.x.toFixed(1)+'" y="'+(n.y-r-3).toFixed(1)+'" text-anchor="middle" font-size="10" fill="currentColor" style="direction:ltr">'+n.id+'</text><title>'+n.id+' · '+hb(n.b)+'</title></g>'});
+ svg+='</svg>';
+ const box=el('div',{class:'panel'});box.innerHTML=svg;
+ box.querySelectorAll('line').forEach(l=>l.onclick=()=>showPair(l.dataset.a,l.dataset.b));
+ box.querySelectorAll('.gn').forEach(g=>g.onclick=()=>{const p=E.find(e=>e.a===g.dataset.id||e.b===g.dataset.id);if(p)showPair(p.a,p.b)});
+ const lg=el('div',{class:'row',style:'gap:14px;margin-top:8px;flex-wrap:wrap'},...[['عادی',0],['کم',1],['متوسط',2],['زیاد',3],['بحرانی',4]].map(([l,i])=>el('span',{class:'muted'},el('span',{style:'display:inline-block;width:10px;height:10px;border-radius:50%;background:'+col[i]+';margin-inline-end:5px'}),l)));
+ return [el('h2',{},'گراف شبکه'),el('p',{class:'muted'},'اندازه‌ی گره = حجم ترافیک · ضخامت یال = حجم بین دو میزبان · رنگ = بالاترین شدت هشدار مرتبط. روی گره یا یال کلیک کنید.'),box,lg]});
 // ============ FILES (ZIP explorer)
 function fileModal(f){const pv=f.preview||{};let pe=null;
  if(pv.k==='image'&&/^data:image\/(png|jpeg|gif|webp|bmp|x-icon);base64,/.test(pv.v))pe=el('img',{src:pv.v,style:'max-width:100%;max-height:300px;image-rendering:pixelated;border:1px solid var(--line);border-radius:8px;background:#fff'});
