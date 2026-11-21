@@ -387,12 +387,12 @@ class GlassPanel(tk.Canvas):
     def schedule(self, force=False):
         if force:
             self._key = None
-        if self._after:
-            try:
+        try:      # a destroyed widget raises TclError (or AttributeError on older Pythons) here
+            if self._after:
                 self.after_cancel(self._after)
-            except tk.TclError:
-                return
-        self._after = self.after(50, self.paint)
+            self._after = self.after(50, self.paint)
+        except (tk.TclError, AttributeError):
+            self._after = None
 
     def _glass_parent(self):
         w = self.master
@@ -645,7 +645,10 @@ class SegmentedNav(tk.Canvas):
             self._draw()
             return
         if self._anim:
-            self.after_cancel(self._anim)
+            try:
+                self.after_cancel(self._anim)
+            except (tk.TclError, AttributeError):
+                pass
 
         def step():
             d = target - self._x

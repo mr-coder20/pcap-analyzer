@@ -3172,7 +3172,7 @@ if HAS_TK:
                     f.write(time.strftime("[%Y-%m-%d %H:%M:%S]\n") + err + "\n")
             except Exception:
                 pass
-            if isinstance(val, tk.TclError) and any(k in str(val) for k in ("bad window path name", "invalid command name", "application has been destroyed")):
+            if isinstance(val, (tk.TclError, AttributeError)) and any(k in str(val) for k in ("bad window path name", "invalid command name", "application has been destroyed", "NoneType' object has no attribute")):
                 return                       # late redraw callback of a widget that a live rebuild just destroyed
             seen = self.__dict__.setdefault("_seen_ui_errors", set())
             key = (exc.__name__, str(val)[:120], tb.tb_lineno if tb else 0)

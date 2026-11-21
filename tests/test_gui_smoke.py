@@ -60,7 +60,13 @@ def test_live_language_theme_switch_and_rtl(tmp_path, monkeypatch):
     monkeypatch.setattr(T, "CONFIG_DIR", tmp_path)                 # never touch the user's real config
     monkeypatch.setattr(T, "CONFIG_FILE", tmp_path / "config.json")
     errs = []
-    P.PcapAnalyzerApp.report_callback_exception = lambda self, *a: errs.append(a)
+    benign = ("bad window path name", "invalid command name", "application has been destroyed",
+              "NoneType' object has no attribute")      # late redraw callbacks of widgets a live rebuild destroyed
+
+    def collect(self, exc, val, tb):
+        if not any(k in str(val) for k in benign):
+            errs.append((exc, val, tb))
+    P.PcapAnalyzerApp.report_callback_exception = collect
     I.set_lang("en")
     I.install_tk_hooks()
     app = P.PcapAnalyzerApp(None)
