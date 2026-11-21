@@ -3155,6 +3155,20 @@ if HAS_TK:
 
         def report_callback_exception(self, exc, val, tb):
             err = "".join(traceback.format_exception(exc, val, tb))
+            # Log to file; show at most ONE dialog per distinct error. Repeating redraw errors
+            # (e.g. from a <Configure> handler) must never produce an endless stack of modal boxes.
+            try:
+                logp = Path.home() / ".pcap_analyzer" / "gui_errors.log"
+                logp.parent.mkdir(parents=True, exist_ok=True)
+                with open(logp, "a", encoding="utf-8") as f:
+                    f.write(time.strftime("[%Y-%m-%d %H:%M:%S]\n") + err + "\n")
+            except Exception:
+                pass
+            seen = self.__dict__.setdefault("_seen_ui_errors", set())
+            key = (exc.__name__, str(val)[:120], tb.tb_lineno if tb else 0)
+            if key in seen or len(seen) >= 3:
+                return
+            seen.add(key)
             try:
                 messagebox.showerror("خطای غیرمنتظره در رابط کاربری", err[-1800:])
             except Exception:

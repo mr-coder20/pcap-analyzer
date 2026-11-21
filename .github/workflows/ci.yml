@@ -27,4 +27,10 @@ jobs:
           python -m pip install ruff
           python -m ruff check --select F821,F811,F823,E9 .
       - name: Tests
+        if: runner.os != 'Linux'
         run: python -m pytest -q
+      - name: Tests (Linux, virtual display for the GUI smoke test)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-tk xvfb || true
+          xvfb-run -a python -m pytest -q

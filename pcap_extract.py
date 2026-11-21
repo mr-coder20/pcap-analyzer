@@ -402,7 +402,9 @@ class FileStore:
 
 
     def _zinfo(self, arc, ts):
-        cls = (getattr(pyzipper, "ZipInfo", None) if self.mode == "aes" else None) or zipfile.ZipInfo
+        # pyzipper's AESZipFile.writestr only accepts ITS OWN zipinfo class (self._zf.zipinfo_cls);
+        # passing pyzipper.ZipInfo / zipfile.ZipInfo raises and silently downgraded to plain mode.
+        cls = getattr(self._zf, "zipinfo_cls", None) or zipfile.ZipInfo
         return cls(arc, self._dt(ts))
 
     def _write(self, arc, payload, ts, rec, path_ext, cat):

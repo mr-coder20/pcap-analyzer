@@ -32,8 +32,37 @@ PAL = {
 
 
 def hex2rgb(h):
-    h = h.lstrip("#")
-    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    """Colour → (r, g, b). Accepts '#rrggbb', '#rgb', and Tk colour names.
+
+    On Windows ``widget.cget("bg")`` can return a system colour name such as
+    ``SystemButtonFace`` instead of a hex string, so names are resolved through Tk.
+    """
+    if isinstance(h, (tuple, list)) and len(h) >= 3:
+        return tuple(int(v) for v in h[:3])
+    h = str(h or "").strip()
+    if h.startswith("#"):
+        x = h[1:]
+        if len(x) == 3:
+            x = "".join(c * 2 for c in x)
+        if len(x) == 12:                      # #rrrrggggbbbb
+            x = x[0:2] + x[4:6] + x[8:10]
+        try:
+            if len(x) >= 6:
+                return tuple(int(x[i:i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            pass
+    else:
+        try:
+            import tkinter as _tk
+            root = getattr(_tk, "_default_root", None)
+            if root is not None:
+                r, g, b = root.winfo_rgb(h)
+                return (r >> 8, g >> 8, b >> 8)
+        except Exception:
+            pass
+    if h and h != PAL.get("bg"):               # last resort: theme background
+        return hex2rgb(PAL["bg"])
+    return (5, 7, 15)
 
 
 def rgb2hex(c):
