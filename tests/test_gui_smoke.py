@@ -69,7 +69,10 @@ def test_live_language_theme_switch_and_rtl(tmp_path, monkeypatch):
     P.PcapAnalyzerApp.report_callback_exception = collect
     I.set_lang("en")
     I.install_tk_hooks()
-    app = P.PcapAnalyzerApp(None)
+    try:
+        app = P.PcapAnalyzerApp(None)
+    except tk.TclError as e:      # broken Tcl/Tk install on a CI runner is an environment problem, not a code bug
+        pytest.skip(f"Tk unavailable: {e}")
     try:
         app.geometry("1200x800")
         for _ in range(15):
