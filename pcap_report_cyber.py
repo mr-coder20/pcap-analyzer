@@ -417,8 +417,10 @@ def build_cyber_report(path, st, findings, corr, theme=TH.DEFAULT_THEME, materia
     data = assemble_data(path, st, findings, corr, theme, material, **kw)
     title = f"{META.APP_NAME} v{META.VERSION} — {os.path.basename(path)}"
     esc = lambda s: str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    _lang = I18N.get_lang()
+    _dir = "rtl" if _lang == "fa" else "ltr"
     html = (
-        f'<!doctype html><html lang="{I18N.get_lang()}" dir="{'rtl' if I18N.get_lang() == 'fa' else 'ltr'}" data-lang="{I18N.get_lang()}" data-theme="{esc(theme)}" data-material="{esc(material)}" data-grid="1"><head><meta charset="utf-8">'
+        f'<!doctype html><html lang="{_lang}" dir="{_dir}" data-lang="{_lang}" data-theme="{esc(theme)}" data-material="{esc(material)}" data-grid="1"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<title>{esc(title)}</title><style>{TH.theme_css()}\n{CSS}</style></head><body>'
         '<div id="bg-grid"></div><canvas id="rain"></canvas><div id="bg-scan"></div>'
