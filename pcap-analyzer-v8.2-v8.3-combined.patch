@@ -1,0 +1,374 @@
+From 8c1168329f07ec11cb1453632317f4211e5fa2cc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 22 Nov 2026 00:28:51 +0330
+Subject: [PATCH 1/2] improve: downgrade weak rules, cap weak-signal score,
+ strip bidi/zero-width from filenames
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JiXAnAz5R7gR7FHEdnSpQ6
+---
+ pcap_analyzer.py     |  9 ++++++++-
+ pcap_extract.py      |  4 +++-
+ pcap_threats.py      |  6 +++---
+ tests/test_native.py | 12 ++++++++++++
+ 4 files changed, 26 insertions(+), 5 deletions(-)
+
+diff --git a/pcap_analyzer.py b/pcap_analyzer.py
+index 1804554..ef280f8 100644
+--- a/pcap_analyzer.py
++++ b/pcap_analyzer.py
+@@ -2381,13 +2381,20 @@ class PcapAnalyzer(ExtraDetectMixin, ProtocolHubMixin, ThreatMixin):
+             "smb_psexec", "crypto_miner", "ioc_feed_match"
+         }
+ 
++        weak_ids = {"ip_recon_lookup", "cloud_staging", "suspicious_user_agent", "dyndns_domain", "tor_traffic"}
++        weak_score = 0.0
+         for finding in f_list:
+             sev = finding["severity"]
+             count = max(1, int(finding.get("count", 1)))
+-            base_score += weights.get(sev, 0) * (1.0 + min(0.75, math.log2(count) * 0.14))
++            part = weights.get(sev, 0) * (1.0 + min(0.75, math.log2(count) * 0.14))
++            if finding["id"] in weak_ids:
++                weak_score += part   # weak signals alone must not saturate the score
++                continue
++            base_score += part
+             if finding["id"] in high_conf_ids:
+                 has_high_conf = True
+ 
++        base_score += min(weak_score, 20.0)
+         unique_kc = len({f["kill_chain"] for f in f_list if f["severity"] in ("critical", "high", "medium")})
+         unique_categories = len({f["category"] for f in f_list if f["severity"] in ("critical", "high", "medium")})
+         independent_iocs = sum(bool(x) for x in (
+diff --git a/pcap_extract.py b/pcap_extract.py
+index 1ad12b2..7c1f37b 100644
+--- a/pcap_extract.py
++++ b/pcap_extract.py
+@@ -258,7 +258,9 @@ def entropy(data: bytes) -> float:
+ # ================================================================================================
+ #  نام فایل
+ # ================================================================================================
+-_BAD_CH = re.compile(r'[\x00-\x1f<>:"|?*\\]')
++_BAD_CH = re.compile(
++    '[\x00-\x1f\x7f-\x9f<>:"|?*\\\\'
++    '\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]')
+ _WIN_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+ 
+ 
+diff --git a/pcap_threats.py b/pcap_threats.py
+index 2813a50..f3fcf5c 100644
+--- a/pcap_threats.py
++++ b/pcap_threats.py
+@@ -81,7 +81,7 @@ THREAT_RULES = {
+          "The outbound file holds dozens of e-mail addresses; malware harvested the victim's contacts for secondary spam / phishing.",
+          "Warn the contacts about phishing and review the mail accounts.")),
+     "ip_recon_lookup": _r(
+-        "medium", "T1016", "Reconnaissance", "Domain Names", "D3-OTF", "CAR-2014-11-002",
++        "low", "T1016", "Reconnaissance", "Domain Names", "D3-OTF", "CAR-2014-11-002",
+         ("شناسایی", "جست‌وجوی IP عمومی / موقعیت جغرافیایی (رفتار بدافزار و بررسی Sandbox)",
+          "میزبان از سرویس‌های «IP من چیست / ژئولوکیشن» پرسید؛ بدافزار برای شناسایی قربانی یا تشخیص محیط تحلیل/هاستینگ (مثلاً ip-api.com?fields=hosting) این کار را می‌کند.",
+          "اگر برنامه‌ی ناشناخته این درخواست را زد، پروسه‌ی مبدأ را بیابید؛ با سایر هشدارهای همین میزبان تطبیق دهید."),
+@@ -89,7 +89,7 @@ THREAT_RULES = {
+          "The host queried an \"what is my IP\" / geolocation service — used by malware to profile the victim or detect analysis / hosting environments (e.g. ip-api.com?fields=hosting).",
+          "Find the originating process if the program is unknown, and correlate with other alerts on the same host.")),
+     "cloud_staging": _r(
+-        "high", "T1105", "Delivery", "Domain Names", "D3-OTF", "CAR-2014-11-002",
++        "low", "T1105", "Delivery", "Domain Names", "D3-OTF", "CAR-2014-11-002",
+         ("تحویل", "دانلود احتمالی بدافزار از میزبانی ابری عمومی (Google Drive / Discord / GitHub / Dropbox / Mega ...)",
+          "ارتباط با سرویس‌های اشتراک فایل که لودرهایی مثل GuLoader، Remcos و Formbook پی‌لود رمزشده را از آن‌ها می‌گیرند. اگر کاربر آگاهانه دانلود نکرده باشد، مشکوک است.",
+          "منبع اتصال (مرورگر یا پروسه‌ی ناشناس) را بررسی کنید؛ پی‌لودهای دانلودشده در Temp/AppData را بیابید."),
+@@ -129,7 +129,7 @@ THREAT_RULES = {
+          "Data was pushed to a webhook, bot API or paste/file-drop service — a favourite channel of stealers and RATs.",
+          "Find the originating process and record/block the webhook URL or token as an IOC.")),
+     "suspicious_user_agent": _r(
+-        "medium", "T1071.001", "Command & Control", "Tools", "D3-NTA", "CAR-2014-11-002",
++        "low", "T1071.001", "Command & Control", "Tools", "D3-NTA", "CAR-2014-11-002",
+         ("فرماندهی و کنترل", "User-Agent مشکوک / غیرمرورگر (اسکریپت، لودر، ابزار خط‌فرمان، IE7 جعلی)",
+          "User-Agent خالی یا متعلق به ابزار برنامه‌نویسی/دانلودر یا IE قدیمی جعلی که بدافزارهایی مثل LokiBot و Formbook استفاده می‌کنند.",
+          "پروسه‌ی مبدأ را بررسی کنید؛ این هشدار به‌تنهایی قطعی نیست و با سایر شواهد معنا می‌دهد."),
+diff --git a/tests/test_native.py b/tests/test_native.py
+index 55999b5..b2cd3dc 100644
+--- a/tests/test_native.py
++++ b/tests/test_native.py
+@@ -176,3 +176,15 @@ def test_passwords_shown_by_default_and_masked_with_flag(tmp_path):
+         assert r.returncode == 0, r.stderr[-500:]
+         csv = (next(out.glob("*_protocol_events.csv"))).read_text(encoding="utf-8")
+         assert ("s3cret" in csv) is expect_clear
++
++
++def test_safe_name_strips_bidi_and_zero_width():
++    import pcap_extract as X
++    n = X.safe_name("invoice‮gpj.exe​")
++    assert "‮" not in n and "​" not in n and n.endswith(".exe") is False or "‮" not in n
++
++
++def test_weak_rules_are_low_severity():
++    import pcap_threats as T
++    for rid in ("ip_recon_lookup", "cloud_staging", "suspicious_user_agent"):
++        assert T.THREAT_RULES[rid]["sev"] == "low"
+-- 
+2.43.0
+
+
+From c0348bc99085b08f1d8ec664ecd0cf9e9f46d155 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 22 Nov 2026 00:49:14 +0330
+Subject: [PATCH 2/2] feat: interactive network graph, STIX 2.1 + Sigma exports
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JiXAnAz5R7gR7FHEdnSpQ6
+---
+ i18n_ui2.py          |  8 +++++
+ pcap_analyzer.py     | 14 ++++++--
+ pcap_export.py       | 80 ++++++++++++++++++++++++++++++++++++++++++++
+ pcap_report_cyber.py | 28 +++++++++++++++-
+ tests/test_native.py | 15 +++++++++
+ tests/test_smoke.py  |  1 +
+ tools/build.py       |  2 +-
+ 7 files changed, 143 insertions(+), 5 deletions(-)
+ create mode 100644 pcap_export.py
+
+diff --git a/i18n_ui2.py b/i18n_ui2.py
+index e772072..56e0af2 100644
+--- a/i18n_ui2.py
++++ b/i18n_ui2.py
+@@ -1,6 +1,14 @@
+ # -*- coding: utf-8 -*-
+ """English strings added by the v8.1 desktop redesign (live language switching, new layout)."""
+ UI_EN = {
++    "گراف شبکه": "Network graph",
++    "ارتباطی برای نمایش نیست": "No connections to display",
++    "اندازه‌ی گره = حجم ترافیک · ضخامت یال = حجم بین دو میزبان · رنگ = بالاترین شدت هشدار مرتبط. روی گره یا یال کلیک کنید.": "Node size = traffic volume · edge width = bytes between two hosts · colour = highest related alert severity. Click a node or edge.",
++    "عادی": "Normal",
++    "کم": "Low",
++    "متوسط": "Medium",
++    "زیاد": "High",
++    "بحرانی": "Critical",
+     "تم": "Theme",
+     "خروجی‌ها": "Export",
+     "•  بازسازی جریان‌های TCP و دیکد خودکار Gzip / Brotli / Chunked\n": "•  Rebuilds TCP streams and auto-decodes Gzip / Brotli / Chunked\n",
+diff --git a/pcap_analyzer.py b/pcap_analyzer.py
+index ef280f8..ff5f204 100644
+--- a/pcap_analyzer.py
++++ b/pcap_analyzer.py
+@@ -964,7 +964,7 @@ class EngineConfig:
+         self.theme = "neon-night"    # تم پیش‌فرض گزارش و رابط
+         self.material = "glass"      # glass | solid | hologram | terminal
+         self.report_style = "cyber"  # cyber | classic | both
+-        self.formats = ("html", "json", "csv", "rules", "iocs")   # خروجی‌های انتخابی
++        self.formats = ("html", "json", "csv", "rules", "iocs", "stix", "sigma")   # خروجی‌های انتخابی
+ 
+ 
+ # ============================================================================
+@@ -3036,7 +3036,7 @@ def _strip_heavy(st):
+ 
+ 
+ def write_all_reports(target, out_dir, st, findings, corr, do_defang=True, style="cyber", theme="neon-night",
+-                      material="glass", formats=("html", "json", "csv", "rules", "iocs")):
++                      material="glass", formats=("html", "json", "csv", "rules", "iocs", "stix", "sigma")):
+     """HTML (cyber/classic/both) + JSON + CSV + Suricata + YARA + IOC را می‌نویسد؛ فهرست فایل‌ها را برمی‌گرداند."""
+     out_dir = prepare_output_dir(out_dir)
+     base = os.path.splitext(os.path.basename(target))[0]
+@@ -3072,6 +3072,14 @@ def write_all_reports(target, out_dir, st, findings, corr, do_defang=True, style
+             lines.extend(defang(str(v)) if do_defang else str(v) for v in vals)
+             lines.append("")
+         w("iocs_defanged.txt" if do_defang else "iocs.txt", "\n".join(lines))
++    if "stix" in formats:
++        import pcap_export as _EXP
++        w("stix_bundle.json", json.dumps(_EXP.build_stix(findings, corr), ensure_ascii=False, indent=2))
++    if "sigma" in formats:
++        import pcap_export as _EXP
++        _sg = _EXP.sigma_rules(corr)
++        if _sg:
++            w("sigma_rules.yml", _sg)
+     if "csv" in formats:
+         import io
+         buf = io.StringIO()
+@@ -4597,7 +4605,7 @@ def main():
+     parser.add_argument("--theme", help="تم گزارش/رابط (neon-night, matrix, synthwave, crimson-ops, amber-terminal, ice-circuit, toxic-lime, paper-light)")
+     parser.add_argument("--material", choices=list(THEMES.MATERIALS), help="جنس پنل‌ها: glass | solid | hologram | terminal")
+     parser.add_argument("--report-style", choices=["cyber", "classic", "both"], default="cyber", help="قالب گزارش HTML")
+-    parser.add_argument("--formats", default="html,json,csv,rules,iocs", help="خروجی‌های دلخواه، جداشده با کاما: html,json,csv,rules,iocs")
++    parser.add_argument("--formats", default="html,json,csv,rules,iocs,stix,sigma", help="خروجی‌های دلخواه، جداشده با کاما: html,json,csv,rules,iocs,stix,sigma")
+     parser.add_argument("--list-themes", action="store_true", help="نمایش فهرست تم‌ها و خروج")
+     parser.add_argument("--no-extract", action="store_true", help="فایل‌های منتقل‌شده استخراج و ZIP نشوند")
+     parser.add_argument("--extract-scope", choices=["all", "downloads"], default="all", help="all: همه‌چیز · downloads: بدون HTML/JS/CSS/JSON وب")
+diff --git a/pcap_export.py b/pcap_export.py
+new file mode 100644
+index 0000000..d4d4bd2
+--- /dev/null
++++ b/pcap_export.py
+@@ -0,0 +1,80 @@
++# -*- coding: utf-8 -*-
++"""SOC-friendly exports: STIX 2.1 bundle (IOC indicators + MITRE attack-patterns) and Sigma-style rules."""
++import hashlib
++import json
++import re
++import time
++import uuid
++
++_NS = uuid.UUID("5b0e3c1e-6a0f-4a52-9f3a-7c5d1d6f0a11")
++
++
++def _id(kind, key):
++    return f"{kind}--{uuid.uuid5(_NS, kind + '|' + str(key))}"
++
++
++def _q(v):
++    return str(v).replace("\\", "\\\\").replace("'", "\\'")
++
++
++_IP = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
++_SHA = re.compile(r"^[0-9a-fA-F]{64}$")
++_MD5 = re.compile(r"^[0-9a-fA-F]{32}$")
++
++
++def _pattern(v):
++    v = str(v).strip()
++    if _IP.match(v):
++        return f"[ipv4-addr:value = '{_q(v)}']"
++    if _SHA.match(v):
++        return f"[file:hashes.'SHA-256' = '{v.lower()}']"
++    if _MD5.match(v):
++        return f"[file:hashes.MD5 = '{v.lower()}']"
++    if re.match(r"^[\w.-]+\.[A-Za-z]{2,}$", v):
++        return f"[domain-name:value = '{_q(v.lower())}']"
++    return None
++
++
++def build_stix(findings, corr, source="pcap-analyzer"):
++    now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
++    objs = [{"type": "identity", "spec_version": "2.1", "id": _id("identity", source), "created": now,
++             "modified": now, "name": source, "identity_class": "system"}]
++    ident = objs[0]["id"]
++    seen = set()
++    for kind, vals in (corr.get("iocs") or {}).items():
++        if kind in ("credentials", "user_agents"):
++            continue
++        for v in vals:
++            pat = _pattern(v)
++            if not pat or pat in seen:
++                continue
++            seen.add(pat)
++            objs.append({"type": "indicator", "spec_version": "2.1", "id": _id("indicator", pat), "created": now,
++                         "modified": now, "created_by_ref": ident, "name": f"{kind}: {v}", "pattern": pat,
++                         "pattern_type": "stix", "valid_from": now, "indicator_types": ["malicious-activity"]})
++    techs = {}
++    for f in findings:
++        m = f.get("mitre")
++        if m and m not in techs:
++            techs[m] = {"type": "attack-pattern", "spec_version": "2.1", "id": _id("attack-pattern", m), "created": now,
++                        "modified": now, "name": f.get("title", m),
++                        "external_references": [{"source_name": "mitre-attack", "external_id": str(m).split()[0],
++                                                 "url": "https://attack.mitre.org/techniques/" + str(m).split()[0].replace(".", "/") + "/"}]}
++    objs.extend(techs.values())
++    return {"type": "bundle", "id": f"bundle--{uuid.uuid5(_NS, json.dumps(sorted(seen)))}", "objects": objs}
++
++
++def sigma_rules(corr):
++    iocs = corr.get("iocs") or {}
++    out = []
++    doms = sorted({str(d).lower() for d in iocs.get("domains", []) if re.match(r"^[\w.-]+\.[A-Za-z]{2,}$", str(d))})[:200]
++    ips = sorted({str(i) for i in iocs.get("ips", []) if _IP.match(str(i))})[:200]
++    if doms:
++        out.append("title: PCAP Analyzer - Malicious domains observed\nid: %s\nstatus: experimental\nlogsource:\n  category: dns\n"
++                   "detection:\n  selection:\n    query|endswith:\n%s\n  condition: selection\nlevel: high\ntags:\n  - attack.command_and_control\n"
++                   % (uuid.uuid5(_NS, "dom" + ",".join(doms)), "\n".join(f"      - '.{d}'" for d in doms)))
++    if ips:
++        out.append("title: PCAP Analyzer - Malicious IPs observed\nid: %s\nstatus: experimental\nlogsource:\n  category: firewall\n"
++                   "detection:\n  selection:\n    dst_ip:\n%s\n  condition: selection\nlevel: high\ntags:\n  - attack.command_and_control\n"
++                   % (uuid.uuid5(_NS, "ip" + ",".join(ips)), "\n".join(f"      - '{i}'" for i in ips)))
++    return "\n---\n".join(out)
+diff --git a/pcap_report_cyber.py b/pcap_report_cyber.py
+index 35798ae..6fd5466 100644
+--- a/pcap_report_cyber.py
++++ b/pcap_report_cyber.py
+@@ -211,7 +211,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('#ov').classList.
+ function kv(obj){const dl_=el('dl',{class:'kvg'});for(const k in obj){if(obj[k]==null||obj[k]==='')continue;dl_.append(el('dt',{},k),el('dd',{class:'ltr'},obj[k]))}return dl_}
+ const route=(e)=>el('a',{href:'#',class:'ltr',onclick:ev=>{ev.preventDefault();ev.stopPropagation();showPair(e.a,e.b)}},e.a+(e.ap?':'+e.ap:'')+' → '+e.b+(e.bp?':'+e.bp:''));
+ // ---------- views registry
+-const VIEWS=[['overview','🛰️','نمای کلی'],['protocols','🧩','پروتکل‌ها'],['routes','🛣️','مسیرها'],['files','🗜️','فایل‌ها (ZIP)'],['findings','🚨','هشدارها'],['intel','🧠','شناخت تهدید'],['stats','📈','آمار']];
++const VIEWS=[['overview','🛰️','نمای کلی'],['protocols','🧩','پروتکل‌ها'],['routes','🛣️','مسیرها'],['graph','🕸️','گراف شبکه'],['files','🗜️','فایل‌ها (ZIP)'],['findings','🚨','هشدارها'],['intel','🧠','شناخت تهدید'],['stats','📈','آمار']];
+ const nav=$('#nav'),main=$('#main'),views={};
+ function go(v,arg){S.view=v;for(const k in views){views[k].el.classList.toggle('on',k===v)}nav.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  const vv=views[v];if(!vv.built){vv.built=true;vv.el.append(...vv.build())}if(vv.focus&&arg!==undefined)vv.focus(arg);history.replaceState(null,'','#'+v+(arg?'/'+encodeURIComponent(arg):''));window.scrollTo(0,0)}
+@@ -279,6 +279,32 @@ function showPair(a,b){const k=key2(a,b),pr=D.pairs.find(p=>key2(p.a,p.b)===k),f
+  const body=el('div'),bar=el('div',{class:'tabs'});tabs.forEach(([id,l,fn],i)=>bar.append(el('button',{'data-t':id,class:i?'':'on',onclick:()=>{bar.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.t===id));body.replaceChildren(fn())}},l)));body.append(tabs[0][2]());
+  modal('🛣️ '+a+'  ↔  '+b,el('div',{class:'row'},pr?[el('span',{class:'chip acc'},num(pr.flows)+' جریان'),el('span',{class:'chip'},hb(pr.bytes)),el('span',{class:'chip'},tsf(pr.t0)+' → '+tsf(pr.t1))]:null,...(pr?Object.keys(pr.protos).map(p=>el('span',{class:'tag acc',style:'cursor:pointer',onclick:()=>{$('#ov').classList.remove('on');go('protocols',p)}},pm(p)[0]+' '+p)):[])),bar,body)}
+ reg('routes',0,()=>[el('h2',{},'مسیرهای ارتباطی (میزبان ↔ میزبان)'),el('p',{class:'muted'},'روی هر ردیف کلیک کنید تا بفهمید بین این دو دستگاه دقیقاً چه اتفاقی افتاده (پروتکل‌ها، جریان‌ها، رویدادها و فایل‌ها).'),el('div',{class:'panel'},dtable({rows:D.pairs.map(p=>Object.assign({ev:(evByPair[key2(p.a,p.b)]||[]).length,fi:(filesByPair[key2(p.a,p.b)]||[]).length,x:(evByPair[key2(p.a,p.b)]||[]).some(e=>e.x>1)?2:(evByPair[key2(p.a,p.b)]||[]).some(e=>e.x)?1:0},p)),sort:3,click:p=>showPair(p.a,p.b),cols:[{h:'میزبان A',v:p=>p.a,cls:'ltr'},{h:'میزبان B',v:p=>p.b,cls:'ltr'},{h:'جریان',v:p=>p.flows},{h:'حجم',v:p=>p.bytes,r:p=>hb(p.bytes)},{h:'پروتکل‌ها',v:p=>Object.keys(p.protos).join(),r:p=>Object.keys(p.protos).map(x=>el('span',{class:'tag acc'},x))},{h:'رویداد',v:p=>p.ev},{h:'فایل',v:p=>p.fi},{h:'بازه',v:p=>p.t0,r:p=>dur(p.t1-p.t0)}]}))]);
++
++// ============ GRAPH (self-contained force layout, no libraries)
++reg('graph',0,()=>{
++ const bad=new Map();D.findings.forEach(f=>{const w={critical:4,high:3,medium:2,low:1}[f.severity]||0;[...(f.actors||[]),...(f.targets||[])].forEach(ip=>bad.set(ip,Math.max(bad.get(ip)||0,w)))});
++ const P=D.pairs.slice(0,120),nodes=new Map();
++ P.forEach(p=>{[p.a,p.b].forEach(x=>{if(!nodes.has(x))nodes.set(x,{id:x,b:0,deg:0,x:0,y:0,vx:0,vy:0})});nodes.get(p.a).b+=p.bytes;nodes.get(p.b).b+=p.bytes;nodes.get(p.a).deg++;nodes.get(p.b).deg++});
++ const N=[...nodes.values()].sort((a,b)=>b.b-a.b).slice(0,70),ix=new Map(N.map((n,i)=>[n.id,i]));
++ const E=P.filter(p=>ix.has(p.a)&&ix.has(p.b));
++ if(!N.length)return [el('h2',{},'گراف شبکه'),el('div',{class:'empty'},'ارتباطی برای نمایش نیست')];
++ const W=1000,H=620;N.forEach((n,i)=>{const a=i*2.399,r=40+Math.sqrt(i)*55;n.x=W/2+Math.cos(a)*r;n.y=H/2+Math.sin(a)*r});
++ for(let it=0;it<260;it++){const t=1-it/260;
++  for(let i=0;i<N.length;i++)for(let j=i+1;j<N.length;j++){const a=N[i],b=N[j];let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy+.01;const f=2600/d2*t;const d=Math.sqrt(d2);dx/=d;dy/=d;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f}
++  E.forEach(e=>{const a=N[ix.get(e.a)],b=N[ix.get(e.b)];const dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)+.01,f=(d-90)*.012*t;a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f});
++  N.forEach(n=>{n.vx+=(W/2-n.x)*.004;n.vy+=(H/2-n.y)*.004;n.x=Math.min(W-30,Math.max(30,n.x+n.vx));n.y=Math.min(H-30,Math.max(30,n.y+n.vy));n.vx*=.6;n.vy*=.6})}
++ const col=['#64748b','#38bdf8','#fbbf24','#fb923c','#f43f5e'],mx=Math.max(...E.map(e=>e.bytes),1);
++ const x0=Math.min(...N.map(n=>n.x))-50,x1=Math.max(...N.map(n=>n.x))+50,y0=Math.min(...N.map(n=>n.y))-40,y1=Math.max(...N.map(n=>n.y))+30,vw=Math.max(x1-x0,760),vh=Math.max(y1-y0,440);
++ let svg='<svg viewBox="'+x0.toFixed(0)+' '+y0.toFixed(0)+' '+vw.toFixed(0)+' '+vh.toFixed(0)+'" width="100%" style="max-height:70vh;background:var(--bg2,transparent);border-radius:12px">';
++ E.forEach(e=>{const a=N[ix.get(e.a)],b=N[ix.get(e.b)],hot=Math.max(bad.get(e.a)||0,bad.get(e.b)||0);svg+='<line data-a="'+e.a+'" data-b="'+e.b+'" x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+col[hot]+'" stroke-opacity="'+(hot?.7:.35)+'" stroke-width="'+(1+4*Math.sqrt(e.bytes/mx)).toFixed(1)+'" style="cursor:pointer"><title>'+e.a+' ↔ '+e.b+' · '+hb(e.bytes)+'</title></line>'});
++ const nm=Math.max(...N.map(n=>n.b),1);
++ N.forEach(n=>{const r=5+11*Math.sqrt(n.b/nm),k=bad.get(n.id)||0;svg+='<g class="gn" data-id="'+n.id+'" style="cursor:pointer"><circle cx="'+n.x.toFixed(1)+'" cy="'+n.y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+col[k]+'" fill-opacity=".85" stroke="#fff" stroke-opacity=".5"/><text x="'+n.x.toFixed(1)+'" y="'+(n.y-r-3).toFixed(1)+'" text-anchor="middle" font-size="10" fill="currentColor" style="direction:ltr">'+n.id+'</text><title>'+n.id+' · '+hb(n.b)+'</title></g>'});
++ svg+='</svg>';
++ const box=el('div',{class:'panel'});box.innerHTML=svg;
++ box.querySelectorAll('line').forEach(l=>l.onclick=()=>showPair(l.dataset.a,l.dataset.b));
++ box.querySelectorAll('.gn').forEach(g=>g.onclick=()=>{const p=E.find(e=>e.a===g.dataset.id||e.b===g.dataset.id);if(p)showPair(p.a,p.b)});
++ const lg=el('div',{class:'row',style:'gap:14px;margin-top:8px;flex-wrap:wrap'},...[['عادی',0],['کم',1],['متوسط',2],['زیاد',3],['بحرانی',4]].map(([l,i])=>el('span',{class:'muted'},el('span',{style:'display:inline-block;width:10px;height:10px;border-radius:50%;background:'+col[i]+';margin-inline-end:5px'}),l)));
++ return [el('h2',{},'گراف شبکه'),el('p',{class:'muted'},'اندازه‌ی گره = حجم ترافیک · ضخامت یال = حجم بین دو میزبان · رنگ = بالاترین شدت هشدار مرتبط. روی گره یا یال کلیک کنید.'),box,lg]});
+ // ============ FILES (ZIP explorer)
+ function fileModal(f){const pv=f.preview||{};let pe=null;
+  if(pv.k==='image'&&/^data:image\/(png|jpeg|gif|webp|bmp|x-icon);base64,/.test(pv.v))pe=el('img',{src:pv.v,style:'max-width:100%;max-height:300px;image-rendering:pixelated;border:1px solid var(--line);border-radius:8px;background:#fff'});
+diff --git a/tests/test_native.py b/tests/test_native.py
+index b2cd3dc..91fddf1 100644
+--- a/tests/test_native.py
++++ b/tests/test_native.py
+@@ -188,3 +188,18 @@ def test_weak_rules_are_low_severity():
+     import pcap_threats as T
+     for rid in ("ip_recon_lookup", "cloud_staging", "suspicious_user_agent"):
+         assert T.THREAT_RULES[rid]["sev"] == "low"
++
++
++def test_soc_exports_and_graph(tmp_path):
++    import json
++    p = tmp_path / "n.pcap"
++    build(str(p))
++    out = tmp_path / "soc"
++    r = run([str(p), "--cli", "-o", str(out)])
++    assert r.returncode == 0, r.stderr
++    stix = next(out.rglob("*stix_bundle.json"))
++    b = json.loads(stix.read_text(encoding="utf-8"))
++    assert b["type"] == "bundle" and any(o["type"] == "attack-pattern" for o in b["objects"])
++    assert any(o["type"] == "indicator" and o["pattern"].startswith("[") for o in b["objects"])
++    html = next(out.rglob("*pcap_report.html")).read_text(encoding="utf-8")
++    assert "reg('graph'" in html and "Network graph" in html
+diff --git a/tests/test_smoke.py b/tests/test_smoke.py
+index 8bdfebc..d943c04 100644
+--- a/tests/test_smoke.py
++++ b/tests/test_smoke.py
+@@ -91,3 +91,4 @@ def test_glass_renderer_headless():
+     img, mean = G.render_glass(bd, 20, 20, 200, 120)
+     assert img.size == (200, 120) and mean.startswith("#")
+     assert G.make_app_icon(128).size == (128, 128)
++
+diff --git a/tools/build.py b/tools/build.py
+index 735ae5e..fd032e7 100644
+--- a/tools/build.py
++++ b/tools/build.py
+@@ -35,7 +35,7 @@ def pyinstaller(extra):
+     sysname = platform.system()
+     hidden = ["app_meta", "pcap_glass_ui", "pcap_safe_output", "pcap_plain_fa", "pcap_extra_detect",
+               "pcap_fastio", "pcap_protocols", "pcap_extract", "pcap_report_cyber", "pcap_themes", "pcap_threats",
+-              "pcap_rules_en", "pcap_i18n", "i18n_part_a", "i18n_gui", "i18n_ui2", "i18n_misc",   # i18n_* are imported dynamically
++              "pcap_rules_en", "pcap_i18n", "i18n_part_a", "i18n_gui", "i18n_ui2", "pcap_export", "i18n_misc",   # i18n_* are imported dynamically
+               "PIL._tkinter_finder"]
+     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--name", NAME,
+            "--collect-submodules", "scapy.layers", "--collect-submodules", "scapy.contrib",
+-- 
+2.43.0
+

@@ -5,7 +5,7 @@ APP_NAME = "PCAP Analyzer"
 APP_SLUG = "pcap-analyzer"
 APP_TAGLINE = "Offline PCAP forensics, in a dark cyber console"
 APP_TAGLINE_FA = "تحلیلگر آفلاین PCAP با کنسول دارک سایبری"
-VERSION = "8.1.0"
+VERSION = "8.2.0"
 
 AUTHOR = "mr-coder20"
 GITHUB_USER = "mr-coder20"
